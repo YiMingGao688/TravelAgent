@@ -124,6 +124,13 @@ export async function generateSmartService(payload) {
     })
 }
 
+export async function generateTravelReport(payload) {
+    return request('/api/smart-service/report', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    })
+}
+
 export async function listSmartServices(userId) {
     const result = await request(`/api/smart-service/list?userId=${encodeURIComponent(userId)}`)
     return result.data || []

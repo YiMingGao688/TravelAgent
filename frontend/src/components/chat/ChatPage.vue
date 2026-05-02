@@ -18,8 +18,10 @@ const showSettings = ref(false)
 const userName = ref(sessionStorage.getItem('loginUser'))
 const showProfileModal = ref(false)
 const sidebarCollapsed = ref(true)
-const route = ref({ from: '', to: '', preference: '', tripPlanId: null })
+const route = ref({ from: '', to: '', preference: '', tripPlanId: null, importSource: '' })
 const customForm = ref({ destination: '', days: 3, budget: '舒适预算', style: '深度人文' })
+const smartContext = ref({})
+const routePlan = ref(null)
 const historyList = ref([])
 const aiChatRef = ref(null)
 const transitRef = ref(null)
@@ -36,6 +38,16 @@ const currentMenuName = computed(() => ({
     smart: '一站式出行服务',
     history: '历史方案'
 })[activeMenu.value] || '智能出行')
+
+const displayMessages = computed(() => messages.value.map(msg => {
+    if (msg.role !== 'ai' || msg.isWelcome) return msg
+    const structuredPlan = extractStructuredPlan(msg)
+    return {
+        ...msg,
+        structuredPlan,
+        isPlan: msg.isPlan || structuredPlan.hasUsefulFields
+    }
+}))
 
 async function switchMenu(id) {
     if (activeMenu.value === 'transit' && transitRef.value) {
@@ -105,7 +117,7 @@ async function handleSavePlan(msg) {
         historyList.value.unshift(saved)
         messages.value.push({
             role: 'ai',
-            content: `方案已保存到历史方案。识别到的起终点：${saved.startPlace || '未识别'} -> ${saved.endPlace || '未识别'}。`,
+            content: `方案已保存到历史方案。识别到的起终点：${saved.startPlace || '未识别'} → ${saved.endPlace || '未识别'}。`,
             time: getCurrentTime(),
             isPlan: false
         })
@@ -139,11 +151,12 @@ function importToTransit(source) {
     route.value = {
         from: plan.startPlace || route.value.from,
         to: plan.endPlace || route.value.to || plan.destination,
-        preference: plan.travelPreference || profile.value.style || profile.value.transport || '舒适优先',
-        tripPlanId: plan.id || null
+        preference: plan.travelPreference || plan.preference || profile.value.style || profile.value.transport || '舒适优先',
+        tripPlanId: plan.id || null,
+        importSource: 'AI 方案'
     }
     activeMenu.value = 'transit'
-    nextTick(() => transitRef.value?.searchSmartRoute(false))
+    nextTick(() => transitRef.value?.initMap())
 }
 
 function importToCustom(source) {
@@ -152,27 +165,61 @@ function importToCustom(source) {
         destination: plan.endPlace || plan.destination || customForm.value.destination,
         days: plan.days || extractDays(plan.content) || customForm.value.days,
         budget: plan.budget || customForm.value.budget,
-        style: plan.travelPreference || profile.value.style || customForm.value.style
+        style: plan.travelPreference || plan.preference || profile.value.style || customForm.value.style
     }
     activeMenu.value = 'custom'
 }
 
+function importToSmart(source) {
+    const plan = normalizePlan(source)
+    smartContext.value = {
+        imported: true,
+        importSource: 'AI 方案',
+        startPlace: plan.startPlace || route.value.from || profile.value.city || '',
+        endPlace: plan.endPlace || plan.destination || route.value.to || '',
+        travelDate: plan.travelDate || '',
+        preference: plan.travelPreference || plan.preference || profile.value.style || profile.value.transport || '',
+        specialNeed: plan.specialNeed || plan.companions || '',
+        budget: plan.budget || '',
+        passengerInfo: plan.companions || '',
+        aiPlan: plan.content || ''
+    }
+    activeMenu.value = 'smart'
+}
+
+function handleRouteGenerated(plan) {
+    routePlan.value = plan
+}
+
+function importRouteToSmart() {
+    const activeRoute = routePlan.value?.activeRoute
+    smartContext.value = {
+        imported: true,
+        importSource: '交通规划',
+        startPlace: route.value.from,
+        endPlace: route.value.to,
+        preference: route.value.preference,
+        specialNeed: routePlan.value?.risk ? `${routePlan.value.risk.label}：${routePlan.value.risk.reasons.join('；')}` : '',
+        aiPlan: activeRoute ? `${activeRoute.routeName}，约 ${activeRoute.distance} 公里，${activeRoute.duration} 分钟。${activeRoute.recommendReason || ''}` : ''
+    }
+    activeMenu.value = 'smart'
+}
+
 function buildPlanPayload(msg) {
     const text = msg.content || ''
-    const lastUserMessage = [...messages.value].reverse().find(item => item.role === 'user')?.content || msg.rawQuestion || ''
-    const extracted = extractPlaces(`${lastUserMessage}\n${text}`)
+    const structured = msg.structuredPlan || extractStructuredPlan(msg)
     return {
         userId: sessionStorage.getItem('loginUser') || 'guest',
         sessionId: msg.sessionId || sessionId.value,
-        title: extracted.startPlace && extracted.endPlace ? `${extracted.startPlace} 到 ${extracted.endPlace} 出行方案` : 'AI 智能出行方案',
-        startPlace: extracted.startPlace,
-        endPlace: extracted.endPlace,
+        title: structured.startPlace && structured.endPlace ? `${structured.startPlace} 到 ${structured.endPlace} 出行方案` : 'AI 智能出行方案',
+        startPlace: structured.startPlace,
+        endPlace: structured.endPlace,
         content: text,
-        rawQuestion: lastUserMessage,
+        rawQuestion: structured.rawQuestion,
         sourceType: 'AI_CHAT',
-        travelPreference: profile.value.style || profile.value.transport || '',
-        budget: extractBudget(`${lastUserMessage}\n${text}`),
-        days: extractDays(`${lastUserMessage}\n${text}`)
+        travelPreference: structured.preference || '',
+        budget: structured.budget || '',
+        days: Number(structured.days) || null
     }
 }
 
@@ -183,34 +230,100 @@ function normalizePlan(source) {
     return source || {}
 }
 
-function extractPlaces(text) {
-    const patterns = [
-        /从\s*([\u4e00-\u9fa5A-Za-z0-9·\-\s]{2,30})\s*(?:出发)?(?:到|去|前往)\s*([\u4e00-\u9fa5A-Za-z0-9·\-\s]{2,30})/,
-        /起点[:：]\s*([^\n，。；;]{2,30})[\s\S]*?终点[:：]\s*([^\n，。；;]{2,30})/,
-        /出发地[:：]\s*([^\n，。；;]{2,30})[\s\S]*?目的地[:：]\s*([^\n，。；;]{2,30})/
+function extractStructuredPlan(msg) {
+    const aiText = String(msg?.content || '')
+    const rawQuestion = String(msg?.rawQuestion || [...messages.value].reverse().find(item => item.role === 'user')?.content || '')
+    const text = `${rawQuestion}\n${aiText}`
+    const places = extractPlaces(rawQuestion, aiText)
+    const days = extractDays(text)
+    const budget = extractBudget(text)
+    const preference = extractPreference(text)
+    const companions = extractCompanions(text)
+    const scenario = extractScenario(text)
+    return {
+        startPlace: places.startPlace,
+        endPlace: places.endPlace,
+        scenario,
+        days,
+        preference,
+        budget,
+        companions,
+        rawQuestion,
+        hasUsefulFields: Boolean(places.startPlace || places.endPlace || days || budget || preference || companions || scenario)
+    }
+}
+
+function extractPlaces(question, answer) {
+    const source = `${question}\n${answer}`
+    const explicitPatterns = [
+        /(?:从|自)\s*([^，。；;,.!?、\n]{2,24})\s*(?:出发)?(?:到|去|前往|抵达)\s*([^，。；;,.!?、\n]{2,24})/,
+        /(?:起点|出发地)[:：]\s*([^，。；;,.!?、\n]{2,24})[\s\S]{0,120}(?:终点|目的地)[:：]\s*([^，。；;,.!?、\n]{2,24})/
     ]
-    for (const pattern of patterns) {
-        const match = text.match(pattern)
+    for (const pattern of explicitPatterns) {
+        const match = source.match(pattern)
         if (match) {
             return { startPlace: cleanPlace(match[1]), endPlace: cleanPlace(match[2]) }
         }
     }
-    const destination = text.match(/(?:去|到|目的地是)\s*([\u4e00-\u9fa5A-Za-z0-9·\-]{2,20})/)
-    return { startPlace: profile.value.city || '', endPlace: destination ? cleanPlace(destination[1]) : '' }
+
+    const destinationPatterns = [
+        /(?:去|到|前往)\s*([^，。；;,.!?、\n]{2,20}?)(?:玩|旅游|出差|看展|游玩|旅行|两天|三天|[0-9一二三四五六七八九十]+天)/,
+        /目的地[:：]\s*([^，。；;,.!?、\n]{2,20})/
+    ]
+    let endPlace = ''
+    for (const pattern of destinationPatterns) {
+        const match = source.match(pattern)
+        if (match) {
+            endPlace = cleanPlace(match[1])
+            break
+        }
+    }
+
+    return {
+        startPlace: endPlace ? (profile.value.city || '') : '',
+        endPlace
+    }
 }
 
 function cleanPlace(value) {
-    return String(value || '').replace(/[，。！？；;,.!?]/g, '').replace(/的.*$/, '').trim()
+    return String(value || '')
+        .replace(/(玩|游玩|旅游|旅行|出差|看展).*$/g, '')
+        .replace(/[，。；;,.!?、]/g, '')
+        .replace(/^(去|到|前往|从|自)/g, '')
+        .replace(/的?$/g, '')
+        .trim()
 }
 
 function extractDays(text = '') {
-    const match = text.match(/(\d+)\s*(?:天|日)/)
-    return match ? Number(match[1]) : null
+    const digit = text.match(/(\d+)\s*(?:天|日)/)
+    if (digit) return Number(digit[1])
+    const cn = text.match(/([一二两三四五六七八九十])\s*(?:天|日)/)
+    if (!cn) return null
+    return { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 }[cn[1]] || null
 }
 
 function extractBudget(text = '') {
-    const match = text.match(/预算[:：]?\s*([^\n，。]{2,20})/)
+    const match = text.match(/(?:预算|花费|费用)[:：]?\s*([0-9]+(?:\s*[-~到]\s*[0-9]+)?\s*(?:元|块)?|经济|中等|舒适|高端)/)
     return match ? match[1].trim() : ''
+}
+
+function extractPreference(text = '') {
+    const options = ['舒适优先', '少换乘', '时间优先', '经济优先', '亲子友好', '老人友好', '人文', '美食', '自然风景']
+    return options.find(item => text.includes(item)) || ''
+}
+
+function extractCompanions(text = '') {
+    const options = ['老人', '孩子', '儿童', '亲子', '情侣', '朋友', '同事', '家庭']
+    const hit = options.filter(item => text.includes(item))
+    return hit.length ? [...new Set(hit)].join('、') : ''
+}
+
+function extractScenario(text = '') {
+    if (/商务|出差|会议/.test(text)) return '商务出行'
+    if (/亲子|孩子|儿童|家庭/.test(text)) return '亲子出行'
+    if (/老人|无障碍|轮椅/.test(text)) return '特殊照顾'
+    if (/周末|两天|三天|旅游|游玩|旅行/.test(text)) return '休闲旅行'
+    return ''
 }
 
 function handleNewChat() {
@@ -258,7 +371,7 @@ onMounted(async () => {
                 <AIChat
                     v-if="activeMenu === 'ai'"
                     ref="aiChatRef"
-                    :initial-messages="messages"
+                    :initial-messages="displayMessages"
                     :ai-thinking="aiThinking"
                     :ai-typing="aiTyping"
                     :image-uploading="imageUploading"
@@ -267,10 +380,16 @@ onMounted(async () => {
                     @save-plan="handleSavePlan"
                     @import-transit="importToTransit"
                     @import-custom="importToCustom"
+                    @import-smart="importToSmart"
                 />
 
                 <div class="module-wrapper transit-page" v-if="activeMenu === 'transit'">
-                    <TransitModule ref="transitRef" v-model:route-data="route" @booking="activeMenu = 'smart'" />
+                    <TransitModule
+                        ref="transitRef"
+                        v-model:route-data="route"
+                        @booking="importRouteToSmart"
+                        @route-generated="handleRouteGenerated"
+                    />
                 </div>
 
                 <div class="module-wrapper trip-page" v-if="activeMenu === 'custom'">
@@ -278,7 +397,12 @@ onMounted(async () => {
                 </div>
 
                 <div class="module-wrapper" v-if="activeMenu === 'smart'">
-                    <SmartServiceModule :profile="profile" :route-data="route" />
+                    <SmartServiceModule
+                        :profile="profile"
+                        :route-data="route"
+                        :route-plan="routePlan"
+                        :service-context="smartContext"
+                    />
                 </div>
 
                 <div class="module-wrapper history-page" v-if="activeMenu === 'history'">

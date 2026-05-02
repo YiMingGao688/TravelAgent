@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itheima.travelagent2.modules.ai.ZhipuAiClient;
 import com.itheima.travelagent2.modules.smartservice.dto.SmartServiceRequestDTO;
+import com.itheima.travelagent2.modules.smartservice.dto.TravelReportRequestDTO;
 import com.itheima.travelagent2.modules.smartservice.entity.SmartServiceRecord;
 import com.itheima.travelagent2.modules.smartservice.mapper.SmartServiceRecordMapper;
 import com.itheima.travelagent2.modules.smartservice.service.SmartService;
@@ -30,31 +31,32 @@ public class SmartServiceImpl implements SmartService {
     public SmartServiceRecord generate(SmartServiceRequestDTO dto) {
         String serviceName = serviceName(dto.getServiceType());
         String systemPrompt = """
-                You are a customer-facing one-stop travel service assistant.
-                Always answer in Simplified Chinese.
-                Generate a practical service plan, not a technical explanation.
-                Cover before-departure reminders, in-trip support, arrival support, special care,
-                luggage support, payment/benefit suggestions and backup actions.
-                Do not mention model, API, database, competition, closed-loop or user profile jargon.
-                Do not fabricate real-time ticketing, weather, crowding or payment results.
+                你是面向旅客的一站式出行服务助手。
+                只用简体中文回答，不能出现英文标题。
+                生成可执行服务方案，不要写技术说明。
+                请覆盖行前、行中、行后服务，并包含提醒、特殊照顾、行李、支付权益、售后协助和异常预案。
+                不要提模型、API、数据库、比赛、闭环、画像等开发者视角词汇。
+                不要编造真实票务、天气、拥堵、支付结果，只能基于用户已提供信息做建议。
                 """;
 
         String userPrompt = """
-                Service type: %s
-                User: %s
-                Start place: %s
-                End place: %s
-                Travel date: %s
-                Preference: %s
-                Special need: %s
-                Budget: %s
-                Passengers: %s
-                Luggage: %s
-                Payment preference: %s
-                Scenario: %s
-                Extra requirement: %s
+                服务类型：%s
+                用户：%s
+                出发地：%s
+                目的地：%s
+                出行时间：%s
+                出行偏好：%s
+                特殊需求：%s
+                预算：%s
+                同行人：%s
+                行李：%s
+                支付偏好：%s
+                出行场景：%s
+                补充要求：%s
 
-                Please generate a complete customer-facing travel service plan in Simplified Chinese.
+                请生成一份面向旅客的服务方案，按“行前、行中、行后”三段输出。
+                每段至少 2 个节点。每个节点用以下格式：
+                【行前】节点标题｜状态：待处理/已完成/风险提醒｜说明：一句可执行建议
                 """.formatted(
                 serviceName,
                 value(dto.getUserId()),
@@ -76,12 +78,75 @@ public class SmartServiceImpl implements SmartService {
         SmartServiceRecord record = new SmartServiceRecord();
         record.setUserId(value(dto.getUserId()));
         record.setServiceType(dto.getServiceType());
-        record.setTitle(serviceName + " plan");
+        record.setTitle(serviceName + "方案");
         record.setStartPlace(dto.getStartPlace());
         record.setEndPlace(dto.getEndPlace());
         record.setRequestPayload(toJson(dto));
         record.setResponsePayload(response);
         record.setStatus("GENERATED");
+        recordMapper.insert(record);
+        return record;
+    }
+
+    @Override
+    public SmartServiceRecord generateReport(TravelReportRequestDTO dto) {
+        String start = value(dto.getStartPlace());
+        String end = value(dto.getEndPlace());
+        String title = "《" + start + "—" + end + "智慧出行服务报告》";
+        String systemPrompt = """
+                你是智慧出行服务报告助手。
+                只用简体中文，面向旅客和答辩展示场景。
+                报告要体现主动提醒、精准规划、服务融合和结果可保存。
+                不要出现模型、接口、数据库、比赛闭环、用户画像等开发者表达。
+                """;
+        String userPrompt = """
+                报告标题：%s
+                出发地：%s
+                目的地：%s
+                出行时间：%s
+                偏好：%s
+                特殊需求：%s
+                AI 方案：%s
+                路线摘要：%s
+                天气摘要：%s
+                风险摘要：%s
+                行李信息：%s
+                售后需求：%s
+                支付偏好：%s
+
+                请生成完整报告，结构如下：
+                一、行程概览
+                二、路线与天气
+                三、风险预警
+                四、行李与特殊照顾
+                五、售后与支付建议
+                六、执行清单
+                """.formatted(
+                title,
+                start,
+                end,
+                value(dto.getTravelDate()),
+                value(dto.getPreference()),
+                value(dto.getSpecialNeed()),
+                value(dto.getAiPlan()),
+                value(dto.getRouteSummary()),
+                value(dto.getWeatherSummary()),
+                value(dto.getRiskSummary()),
+                value(dto.getLuggageInfo()),
+                value(dto.getAfterSalesNeed()),
+                value(dto.getPaymentPreference())
+        );
+
+        String response = zhipuAiClient.chat(systemPrompt, userPrompt);
+        SmartServiceRecord record = new SmartServiceRecord();
+        record.setUserId(value(dto.getUserId()));
+        record.setServiceType("TRAVEL_REPORT");
+        record.setTitle(title);
+        record.setStartPlace(dto.getStartPlace());
+        record.setEndPlace(dto.getEndPlace());
+        record.setRequestPayload(toJson(dto));
+        record.setResponsePayload(response);
+        record.setStatus("SAVED");
         recordMapper.insert(record);
         return record;
     }
@@ -118,13 +183,14 @@ public class SmartServiceImpl implements SmartService {
     }
 
     private String serviceName(String type) {
-        if ("REALTIME_ALERT".equals(type)) return "real-time reminder";
-        if ("INTERMODAL_PLAN".equals(type)) return "intermodal travel";
-        if ("SPECIAL_SCENE".equals(type)) return "special care";
-        if ("AFTER_SALES".equals(type)) return "after-sales support";
-        if ("PASSENGER_LUGGAGE".equals(type)) return "luggage service";
-        if ("PAYMENT_CREDIT".equals(type)) return "payment benefits";
-        if ("PROACTIVE_LOOP".equals(type)) return "travel concierge";
-        return "travel service";
+        if ("REALTIME_ALERT".equals(type)) return "实时提醒";
+        if ("INTERMODAL_PLAN".equals(type)) return "联程出行";
+        if ("SPECIAL_SCENE".equals(type)) return "特殊照顾";
+        if ("AFTER_SALES".equals(type)) return "售后协助";
+        if ("PASSENGER_LUGGAGE".equals(type)) return "行李服务";
+        if ("PAYMENT_CREDIT".equals(type)) return "支付权益";
+        if ("PROACTIVE_LOOP".equals(type)) return "行程管家";
+        if ("TRAVEL_REPORT".equals(type)) return "出行服务报告";
+        return "出行服务";
     }
 }

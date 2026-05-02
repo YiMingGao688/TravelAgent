@@ -2,6 +2,7 @@ package com.itheima.travelagent2.modules.smartservice;
 
 import com.itheima.travelagent2.common.Result;
 import com.itheima.travelagent2.modules.smartservice.dto.SmartServiceRequestDTO;
+import com.itheima.travelagent2.modules.smartservice.dto.TravelReportRequestDTO;
 import com.itheima.travelagent2.modules.smartservice.entity.SmartServiceRecord;
 import com.itheima.travelagent2.modules.smartservice.service.SmartService;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -38,6 +39,19 @@ public class SmartServiceController {
         } catch (Exception e) {
             e.printStackTrace();
             return Result.error(500, "Service plan generation failed. Check cloud AI and database configuration.");
+        }
+    }
+
+    @PostMapping("/report")
+    public Result<SmartServiceRecord> generateReport(@RequestBody TravelReportRequestDTO dto) {
+        if (dto.getUserId() == null || dto.getUserId().isBlank()) {
+            return Result.error(400, "User id is required");
+        }
+        try {
+            return Result.success("OK", smartService.generateReport(dto));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Result.error(500, "出行服务报告生成失败，请检查云端 AI 或数据库配置。");
         }
     }
 

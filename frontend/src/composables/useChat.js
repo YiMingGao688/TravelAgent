@@ -5,7 +5,7 @@ import { getCurrentTime } from '../utils/time.js'
 const welcomeMessage = () => ({
     role: 'ai',
     isWelcome: true,
-    content: '您好，我是您的智能出行助手。您可以告诉我目的地、出行时间、预算和偏好，我会结合您填写的出行偏好生成可执行的出行方案。',
+    content: '您好，我是您的智能出行助手。您可以告诉我目的地、出行时间、预算和偏好，我会结合您的出行偏好生成可执行的出行方案。',
     time: getCurrentTime()
 })
 
@@ -156,8 +156,8 @@ export function useChat(aiChatRef) {
 
     function looksLikePlan(content) {
         const text = String(content || '')
-        if (text.length < 60) return false
-        if (/失败|错误|异常|不可用|未完成配置|请检查后端|No response body/i.test(text)) return false
+        if (text.length < 40) return false
+        if (/失败|错误|异常|不可用|未完成配置|No response body/i.test(text)) return false
         return /方案|路线|行程|出行|交通|换乘|推荐|预算|耗时|目的地|起点|终点/.test(text)
     }
 

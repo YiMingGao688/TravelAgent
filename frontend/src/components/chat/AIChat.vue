@@ -8,7 +8,15 @@ const props = defineProps({
     imageUploading: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['sendMessage', 'scrollBottom', 'interrupt', 'savePlan', 'importTransit', 'importCustom'])
+const emit = defineEmits([
+    'sendMessage',
+    'scrollBottom',
+    'interrupt',
+    'savePlan',
+    'importTransit',
+    'importCustom',
+    'importSmart'
+])
 
 const inputText = ref('')
 const chatRef = ref(null)
@@ -77,11 +85,17 @@ function formatContent(content) {
 
 function isActionablePlan(msg) {
     if (!msg || msg.role !== 'ai' || msg.isWelcome) return false
+    if (msg.structuredPlan?.hasUsefulFields) return true
     if (msg.isPlan === true) return true
     const text = String(msg.content || '')
-    if (text.length < 60) return false
-    if (/失败|错误|异常|不可用|未完成配置|请检查后端|No response body/i.test(text)) return false
+    if (text.length < 40) return false
+    if (/失败|错误|异常|不可用|未完成配置|No response body/i.test(text)) return false
     return /方案|路线|行程|出行|交通|换乘|推荐|预算|耗时|目的地|起点|终点/.test(text)
+}
+
+function fieldValue(plan, key) {
+    const value = plan?.[key]
+    return value === null || value === undefined || value === '' ? '未识别' : value
 }
 
 defineExpose({ scrollToBottom, chatRef })
@@ -97,6 +111,23 @@ defineExpose({ scrollToBottom, chatRef })
                 </div>
                 <div class="message-content" :class="{ 'has-actions': isActionablePlan(msg) }">
                     <div class="bubble" :class="{ 'ai-message': msg.role === 'ai' }" v-html="formatContent(msg.content)"></div>
+
+                    <div v-if="isActionablePlan(msg) && msg.structuredPlan" class="structured-card">
+                        <div class="structured-head">
+                            <strong>已识别出行信息</strong>
+                            <span>用于保存与导入</span>
+                        </div>
+                        <div class="field-grid">
+                            <div><span>起点</span><strong>{{ fieldValue(msg.structuredPlan, 'startPlace') }}</strong></div>
+                            <div><span>终点</span><strong>{{ fieldValue(msg.structuredPlan, 'endPlace') }}</strong></div>
+                            <div><span>场景</span><strong>{{ fieldValue(msg.structuredPlan, 'scenario') }}</strong></div>
+                            <div><span>天数</span><strong>{{ fieldValue(msg.structuredPlan, 'days') }}</strong></div>
+                            <div><span>偏好</span><strong>{{ fieldValue(msg.structuredPlan, 'preference') }}</strong></div>
+                            <div><span>预算</span><strong>{{ fieldValue(msg.structuredPlan, 'budget') }}</strong></div>
+                            <div class="wide"><span>同行人群</span><strong>{{ fieldValue(msg.structuredPlan, 'companions') }}</strong></div>
+                        </div>
+                    </div>
+
                     <div class="time">{{ msg.time }}</div>
                     <div v-if="isActionablePlan(msg)" class="plan-actions">
                         <button class="plan-btn" @click="emit('savePlan', msg)">
@@ -110,6 +141,10 @@ defineExpose({ scrollToBottom, chatRef })
                         <button class="plan-btn ghost" @click="emit('importCustom', msg)">
                             <i class="fa-solid fa-route"></i>
                             <span>导入行程</span>
+                        </button>
+                        <button class="plan-btn ghost" @click="emit('importSmart', msg)">
+                            <i class="fa-solid fa-briefcase-medical"></i>
+                            <span>导入一站式服务</span>
                         </button>
                     </div>
                 </div>
@@ -148,7 +183,7 @@ defineExpose({ scrollToBottom, chatRef })
                 <textarea
                     v-model="inputText"
                     @keydown="handleKeydown"
-                    placeholder="告诉我您的出行目标，例如：帮我规划周末去苏州两日游..."
+                    placeholder="告诉我您的出行目标，例如：从南京出发去杭州玩两天，预算 1500，偏舒适"
                 ></textarea>
                 <button class="icon-btn" @click="clearInput" title="清空">
                     <i class="fa-solid fa-trash-can"></i>
@@ -183,7 +218,7 @@ defineExpose({ scrollToBottom, chatRef })
 
 .message-row {
     width: 100%;
-    max-width: 860px;
+    max-width: 900px;
     display: flex;
     gap: 12px;
     margin-bottom: 24px;
@@ -215,7 +250,7 @@ defineExpose({ scrollToBottom, chatRef })
 }
 
 .message-content {
-    max-width: 72%;
+    max-width: 76%;
     display: flex;
     flex-direction: column;
     position: relative;
@@ -241,6 +276,56 @@ defineExpose({ scrollToBottom, chatRef })
     background: var(--primary-color);
     color: white;
     border-color: var(--primary-color);
+}
+
+.structured-card {
+    margin-top: 10px;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-color);
+}
+
+.structured-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.structured-head strong {
+    color: var(--text-main);
+}
+
+.structured-head span,
+.field-grid span {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.field-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.field-grid div {
+    min-height: 58px;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+}
+
+.field-grid .wide {
+    grid-column: span 3;
+}
+
+.field-grid strong {
+    display: block;
+    margin-top: 4px;
+    color: var(--text-main);
+    line-height: 1.4;
 }
 
 .time {
@@ -305,7 +390,7 @@ defineExpose({ scrollToBottom, chatRef })
 }
 
 .input-box {
-    max-width: 860px;
+    max-width: 900px;
     margin: 0 auto;
     display: flex;
     align-items: flex-end;
@@ -367,7 +452,7 @@ defineExpose({ scrollToBottom, chatRef })
 }
 
 .image-preview {
-    max-width: 860px;
+    max-width: 900px;
     margin: 0 auto 10px;
     display: flex;
     justify-content: space-between;
@@ -394,6 +479,14 @@ defineExpose({ scrollToBottom, chatRef })
 
     .message-content {
         max-width: 86%;
+    }
+
+    .field-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .field-grid .wide {
+        grid-column: auto;
     }
 }
 </style>

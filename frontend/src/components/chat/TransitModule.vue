@@ -5,17 +5,18 @@ import { queryRoutes } from '../../utils/api.js'
 const props = defineProps({
     routeData: {
         type: Object,
-        default: () => ({ from: '', to: '', preference: '', tripPlanId: null })
+        default: () => ({ from: '', to: '', preference: '', tripPlanId: null, importSource: '' })
     }
 })
 
-const emit = defineEmits(['update:routeData', 'booking'])
+const emit = defineEmits(['update:routeData', 'booking', 'routeGenerated'])
 
 const startPoint = ref(props.routeData.from || '')
 const endPoint = ref(props.routeData.to || '')
 const preference = ref(props.routeData.preference || '舒适优先')
 const selectedMode = ref('SMART')
 const loading = ref(false)
+const statusMessage = ref('')
 const routeResults = ref([])
 const activeRoute = ref(null)
 const startLocation = ref(null)
@@ -40,10 +41,21 @@ let startSuggestTimer = null
 let endSuggestTimer = null
 
 const canSearch = computed(() => Boolean(startPoint.value.trim() && endPoint.value.trim()))
+const imported = computed(() => Boolean(props.routeData.importSource))
 
 const routeTitle = computed(() => {
-    if (!startPoint.value && !endPoint.value) return '选择具体地点生成路线'
+    if (!startPoint.value && !endPoint.value) return '选择地点生成路线'
     return `${startPoint.value || '出发地'} → ${endPoint.value || '目的地'}`
+})
+
+const routeSummary = computed(() => {
+    if (!activeRoute.value) return null
+    return {
+        distance: activeRoute.value.distance || 0,
+        duration: activeRoute.value.duration || 0,
+        cost: activeRoute.value.cost || 0,
+        reason: activeRoute.value.recommendReason || '暂无推荐理由'
+    }
 })
 
 const weatherAlerts = computed(() => [
@@ -51,13 +63,7 @@ const weatherAlerts = computed(() => [
     buildWeatherAlert('目的地', endWeather.value)
 ].filter(Boolean))
 
-const guardItems = computed(() => {
-    const defaults = ['实时位置守护', '轨迹回放', '电子围栏提醒', '异常停留与偏航提醒']
-    return (serviceCapabilities.value.length ? serviceCapabilities.value : defaults).map((name, index) => ({
-        name,
-        status: index === 0 && activeRoute.value ? '已就绪' : '可开启'
-    }))
-})
+const risk = computed(() => buildRisk())
 
 watch(() => props.routeData, value => {
     startPoint.value = value?.from || ''
@@ -65,7 +71,11 @@ watch(() => props.routeData, value => {
     preference.value = value?.preference || preference.value || '舒适优先'
     selectedStartPlace.value = null
     selectedEndPlace.value = null
-}, { deep: true })
+    statusMessage.value = value?.importSource ? `已从 ${value.importSource} 导入` : ''
+    if (startPoint.value && endPoint.value) {
+        nextTick(() => drawAmapRoute())
+    }
+}, { deep: true, immediate: true })
 
 watch([startPoint, endPoint, preference], () => {
     emit('update:routeData', {
@@ -102,6 +112,7 @@ async function initMap() {
             autoFitView: true
         })
         mapReady.value = true
+        if (startPoint.value && endPoint.value) drawAmapRoute()
     })
 }
 
@@ -152,11 +163,8 @@ async function searchPlaces(keyword, type) {
                 adcode: item.adcode || '',
                 location: `${item.location.lng},${item.location.lat}`
             }))
-        if (type === 'start') {
-            startSuggestions.value = places
-        } else {
-            endSuggestions.value = places
-        }
+        if (type === 'start') startSuggestions.value = places
+        else endSuggestions.value = places
     })
 }
 
@@ -172,11 +180,9 @@ async function selectPlace(type, place) {
         endSuggestions.value = []
         endLocation.value = toLocationInfo(place)
     }
-    if (canSearch.value) {
-        await drawAmapRoute()
-    } else {
-        previewSelectedPoints()
-    }
+    statusMessage.value = '地点已确认'
+    if (canSearch.value) await drawAmapRoute()
+    else previewSelectedPoints()
 }
 
 function placeLocation(place) {
@@ -200,28 +206,22 @@ function toLocationInfo(place) {
 
 function safeLocationInfo(place, keyword) {
     if (place) return toLocationInfo(place)
-    return {
-        name: keyword,
-        formattedAddress: keyword,
-        location: '',
-        adcode: '',
-        city: ''
-    }
+    return { name: keyword, formattedAddress: keyword, location: '', adcode: '', city: '' }
 }
 
 async function searchSmartRoute(showTip = true) {
     if (!canSearch.value) {
-        if (showTip) {
-            mapError.value = '请先从高德候选地点中选择出发地和目的地，再生成路线。'
-        }
+        if (showTip) mapError.value = '请填写出发地和目的地。'
         return
     }
     if (!map) await initMap()
 
     loading.value = true
     mapError.value = ''
+    statusMessage.value = '正在生成路线方案...'
 
     try {
+        await drawAmapRoute()
         const userId = sessionStorage.getItem('loginUser') || 'guest'
         const plan = await queryRoutes({
             userId,
@@ -246,8 +246,15 @@ async function searchSmartRoute(showTip = true) {
         routeResults.value = plan.routes || []
         activeRoute.value = routeResults.value.find(item => item.routeType === selectedMode.value) || routeResults.value[0] || null
         await drawAmapRoute()
+        statusMessage.value = '路线方案已生成'
+        emit('routeGenerated', {
+            ...plan,
+            risk: risk.value,
+            activeRoute: activeRoute.value
+        })
     } catch (error) {
         mapError.value = friendlyError(error)
+        statusMessage.value = '生成失败，请检查地点或服务配置'
         await previewSelectedPoints()
     } finally {
         loading.value = false
@@ -368,11 +375,8 @@ function swapPlaces() {
     selectedEndPlace.value = oldStartPlace
     startSuggestions.value = []
     endSuggestions.value = []
-    if (canSearch.value) {
-        drawAmapRoute()
-    } else {
-        previewSelectedPoints()
-    }
+    if (canSearch.value) drawAmapRoute()
+    else previewSelectedPoints()
 }
 
 async function applyRoute(route) {
@@ -385,6 +389,15 @@ async function applyRoute(route) {
         driving.setPolicy(policy)
     }
     await drawAmapRoute()
+    emit('routeGenerated', {
+        startLocation: startLocation.value,
+        endLocation: endLocation.value,
+        startWeather: startWeather.value,
+        endWeather: endWeather.value,
+        routes: routeResults.value,
+        risk: risk.value,
+        activeRoute: activeRoute.value
+    })
 }
 
 function weatherCity(weather, fallbackLocation) {
@@ -398,8 +411,37 @@ function buildWeatherAlert(label, weather) {
     if (text.includes('雨') || text.includes('雪') || text.includes('雾')) return `${label}有${weather.weather}，建议预留进站和换乘时间。`
     if (!Number.isNaN(temperature) && temperature >= 32) return `${label}气温较高，建议安排室内候车和补水。`
     if (!Number.isNaN(temperature) && temperature <= 3) return `${label}气温较低，建议关注道路结冰和保暖。`
-    if (text.includes('5') || text.includes('6') || text.includes('7') || text.includes('8')) return `${label}风力偏大，建议关注航班和高架道路通行变化。`
+    if (/[5-9]/.test(String(weather.windpower || ''))) return `${label}风力偏大，建议关注航班和高架道路通行变化。`
     return `${label}天气适合出行，按当前方案执行即可。`
+}
+
+function buildRisk() {
+    let score = 0
+    const reasons = []
+    const distance = Number(activeRoute.value?.distance || 0)
+    const duration = Number(activeRoute.value?.duration || 0)
+    const weatherText = `${startWeather.value?.weather || ''}${endWeather.value?.weather || ''}`
+    if (/雨|雪|雾|雷/.test(weatherText)) {
+        score += 2
+        reasons.push('天气可能影响出行体验')
+    }
+    if (distance > 300 || duration > 240) {
+        score += 2
+        reasons.push('跨城距离较长，建议预留缓冲时间')
+    }
+    if (/老人|亲子|少换乘/.test(preference.value)) {
+        score += 1
+        reasons.push('偏好对舒适度和换乘稳定性要求较高')
+    }
+    if (!activeRoute.value) {
+        reasons.push('等待生成路线后评估完整风险')
+    }
+    const level = score >= 4 ? 'HIGH' : score >= 2 ? 'MEDIUM' : 'LOW'
+    return {
+        level,
+        label: level === 'HIGH' ? '高风险' : level === 'MEDIUM' ? '中风险' : '低风险',
+        reasons: reasons.length ? reasons : ['当前路线风险较低，可按推荐方案执行']
+    }
 }
 
 function friendlyError(error) {
@@ -434,7 +476,13 @@ onBeforeUnmount(destroyMap)
                     <span class="status-pill" :class="{ ready: mapReady }">{{ mapReady ? '地图已连接' : '地图加载中' }}</span>
                 </header>
 
-                <section class="search-box">
+                <div v-if="imported || statusMessage" class="import-banner" :class="{ success: statusMessage.includes('已') || imported }">
+                    <i class="fa-solid fa-circle-check"></i>
+                    <span>{{ imported ? `已从 ${props.routeData.importSource} 导入` : statusMessage }}</span>
+                </div>
+
+                <section class="panel-card route-input">
+                    <div class="section-title"><i class="fa-solid fa-location-dot"></i><span>路线输入</span></div>
                     <div class="field-wrap">
                         <div class="field-line">
                             <span class="point start"></span>
@@ -446,7 +494,6 @@ onBeforeUnmount(destroyMap)
                                 <span>{{ item.district }}{{ item.address }}</span>
                             </button>
                         </div>
-                        <div v-else-if="startPoint && !selectedStartPlace" class="select-hint">请从候选地点中选择具体位置</div>
                     </div>
 
                     <button class="swap-btn" @click="swapPlaces" title="交换起终点">
@@ -464,18 +511,15 @@ onBeforeUnmount(destroyMap)
                                 <span>{{ item.district }}{{ item.address }}</span>
                             </button>
                         </div>
-                        <div v-else-if="endPoint && !selectedEndPlace" class="select-hint">请从候选地点中选择具体位置</div>
                     </div>
 
-                    <div class="preference-row">
-                        <select v-model="preference">
-                            <option>舒适优先</option>
-                            <option>少换乘</option>
-                            <option>时间优先</option>
-                            <option>经济优先</option>
-                            <option>适合亲子/老人</option>
-                        </select>
-                    </div>
+                    <select v-model="preference">
+                        <option>舒适优先</option>
+                        <option>少换乘</option>
+                        <option>时间优先</option>
+                        <option>经济优先</option>
+                        <option>适合亲子/老人</option>
+                    </select>
 
                     <div class="mode-tabs">
                         <button :class="{ active: selectedMode === 'SMART' }" @click="selectedMode = 'SMART'">推荐</button>
@@ -485,20 +529,19 @@ onBeforeUnmount(destroyMap)
 
                     <button class="primary-btn" :disabled="loading || !canSearch" @click="searchSmartRoute(true)">
                         <i class="fa-solid fa-route"></i>
-                        <span>{{ loading ? 'AI 正在生成...' : '生成路线方案' }}</span>
+                        <span>{{ loading ? '正在生成...' : '生成路线方案' }}</span>
                     </button>
                 </section>
 
-                <section v-if="startLocation || endLocation" class="location-card">
-                    <div>
-                        <span>出发地</span>
-                        <strong>{{ startLocation?.formattedAddress || startPoint }}</strong>
+                <section class="panel-card">
+                    <div class="section-title"><i class="fa-solid fa-chart-simple"></i><span>路线摘要</span></div>
+                    <div v-if="routeSummary" class="metrics">
+                        <div><strong>{{ routeSummary.distance }}</strong><span>公里</span></div>
+                        <div><strong>{{ routeSummary.duration }}</strong><span>分钟</span></div>
+                        <div><strong>{{ routeSummary.cost }}</strong><span>元预估</span></div>
                     </div>
-                    <i class="fa-solid fa-arrow-right"></i>
-                    <div>
-                        <span>目的地</span>
-                        <strong>{{ endLocation?.formattedAddress || endPoint }}</strong>
-                    </div>
+                    <p v-if="activeRoute" class="reason">{{ activeRoute.recommendReason }}</p>
+                    <p v-else class="empty-line">生成路线后展示总距离、耗时、预计费用和推荐理由。</p>
                 </section>
 
                 <section class="weather-section">
@@ -510,16 +553,11 @@ onBeforeUnmount(destroyMap)
                         <template v-if="startWeather">
                             <div class="temperature">{{ startWeather.temperature || '-' }}℃</div>
                             <div class="weather-main">{{ startWeather.weather || '暂无天气' }}</div>
-                            <dl>
-                                <div><dt>湿度</dt><dd>{{ startWeather.humidity || '-' }}%</dd></div>
-                                <div><dt>风向</dt><dd>{{ startWeather.winddirection || '-' }}</dd></div>
-                                <div><dt>风力</dt><dd>{{ startWeather.windpower || '-' }}</dd></div>
-                            </dl>
+                            <p>湿度 {{ startWeather.humidity || '-' }}% · {{ startWeather.winddirection || '-' }}风 {{ startWeather.windpower || '-' }}级</p>
                             <small>{{ startWeather.reporttime || '暂无发布时间' }}</small>
                         </template>
-                        <p v-else class="empty-weather">暂无天气数据</p>
+                        <p v-else class="empty-line">暂无天气数据</p>
                     </article>
-
                     <article class="weather-card">
                         <div class="weather-head">
                             <span>目的地天气</span>
@@ -528,38 +566,18 @@ onBeforeUnmount(destroyMap)
                         <template v-if="endWeather">
                             <div class="temperature">{{ endWeather.temperature || '-' }}℃</div>
                             <div class="weather-main">{{ endWeather.weather || '暂无天气' }}</div>
-                            <dl>
-                                <div><dt>湿度</dt><dd>{{ endWeather.humidity || '-' }}%</dd></div>
-                                <div><dt>风向</dt><dd>{{ endWeather.winddirection || '-' }}</dd></div>
-                                <div><dt>风力</dt><dd>{{ endWeather.windpower || '-' }}</dd></div>
-                            </dl>
+                            <p>湿度 {{ endWeather.humidity || '-' }}% · {{ endWeather.winddirection || '-' }}风 {{ endWeather.windpower || '-' }}级</p>
                             <small>{{ endWeather.reporttime || '暂无发布时间' }}</small>
                         </template>
-                        <p v-else class="empty-weather">暂无天气数据</p>
+                        <p v-else class="empty-line">暂无天气数据</p>
                     </article>
                 </section>
 
-                <section v-if="weatherAlerts.length" class="advice-card">
-                    <div class="section-title">
-                        <i class="fa-solid fa-cloud-sun-rain"></i>
-                        <span>天气出行建议</span>
-                    </div>
+                <section class="panel-card risk-card" :class="risk.level.toLowerCase()">
+                    <div class="section-title"><i class="fa-solid fa-triangle-exclamation"></i><span>风险预警</span></div>
+                    <div class="risk-level">{{ risk.label }} <small>{{ risk.level }}</small></div>
+                    <p v-for="item in risk.reasons" :key="item">{{ item }}</p>
                     <p v-for="item in weatherAlerts" :key="item">{{ item }}</p>
-                </section>
-
-                <section v-if="activeRoute" class="route-summary">
-                    <div class="section-title">
-                        <i class="fa-solid fa-wand-magic-sparkles"></i>
-                        <span>AI 推荐方案</span>
-                    </div>
-                    <h3>{{ activeRoute.routeName }}</h3>
-                    <div class="metrics">
-                        <div><strong>{{ activeRoute.duration }}</strong><span>分钟</span></div>
-                        <div><strong>{{ activeRoute.distance }}</strong><span>公里</span></div>
-                        <div><strong>{{ activeRoute.cost }}</strong><span>元预估</span></div>
-                    </div>
-                    <p>{{ activeRoute.description }}</p>
-                    <p class="reason">{{ activeRoute.recommendReason }}</p>
                 </section>
 
                 <section v-if="routeResults.length" class="route-list">
@@ -577,23 +595,13 @@ onBeforeUnmount(destroyMap)
                     </button>
                 </section>
 
-                <section class="guard-card">
-                    <div class="section-title">
-                        <i class="fa-solid fa-shield-heart"></i>
-                        <span>行程守护</span>
-                    </div>
-                    <div class="guard-grid">
-                        <div v-for="item in guardItems" :key="item.name" class="guard-item">
-                            <strong>{{ item.name }}</strong>
-                            <span>{{ item.status }}</span>
-                        </div>
-                    </div>
+                <section class="panel-card actions-card">
+                    <div class="section-title"><i class="fa-solid fa-forward"></i><span>推荐操作</span></div>
+                    <button class="secondary-btn" :disabled="!activeRoute" @click="emit('booking')">
+                        <i class="fa-solid fa-paper-plane"></i>
+                        <span>导入一站式服务</span>
+                    </button>
                 </section>
-
-                <button class="secondary-btn" @click="emit('booking')">
-                    <i class="fa-solid fa-paper-plane"></i>
-                    <span>继续生成出行服务</span>
-                </button>
             </div>
         </aside>
     </div>
@@ -651,7 +659,7 @@ onBeforeUnmount(destroyMap)
     display: flex;
     justify-content: space-between;
     gap: 14px;
-    margin-bottom: 16px;
+    margin-bottom: 14px;
 }
 
 .eyebrow {
@@ -669,33 +677,54 @@ onBeforeUnmount(destroyMap)
     line-height: 1.35;
 }
 
+.status-pill,
+.import-banner {
+    border-radius: 999px;
+    font-size: 12px;
+}
+
 .status-pill {
     height: 28px;
     white-space: nowrap;
     padding: 6px 10px;
-    border-radius: 999px;
     background: #eef2ff;
     color: #475569;
-    font-size: 12px;
 }
 
-.status-pill.ready {
+.status-pill.ready,
+.import-banner.success {
     background: #dcfce7;
     color: #166534;
 }
 
-.search-box,
-.location-card,
-.weather-card,
-.advice-card,
-.route-summary,
-.guard-card {
+.import-banner {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    padding: 7px 10px;
+    margin-bottom: 12px;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.panel-card,
+.weather-card {
     margin-bottom: 14px;
     padding: 14px;
     background: #ffffff;
     border: 1px solid #e2e8f0;
     border-radius: 8px;
     box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
+}
+
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 700;
 }
 
 .field-wrap {
@@ -719,13 +748,8 @@ onBeforeUnmount(destroyMap)
     border-radius: 999px;
 }
 
-.point.start {
-    background: #16a34a;
-}
-
-.point.end {
-    background: #ef4444;
-}
+.point.start { background: #16a34a; }
+.point.end { background: #ef4444; }
 
 input,
 select {
@@ -740,6 +764,7 @@ select {
 
 select {
     height: 42px;
+    margin-top: 12px;
     padding: 0 12px;
     border: 1px solid #e2e8f0;
     border-radius: 8px;
@@ -761,40 +786,33 @@ select {
     box-shadow: 0 16px 34px rgba(15, 23, 42, 0.16);
 }
 
-.suggest-panel button {
+.suggest-panel button,
+.route-list button {
     width: 100%;
-    padding: 10px;
     border: 0;
-    border-radius: 6px;
-    background: transparent;
     text-align: left;
     cursor: pointer;
 }
 
-.suggest-panel button:hover {
-    background: #eff6ff;
+.suggest-panel button {
+    padding: 10px;
+    border-radius: 6px;
+    background: transparent;
 }
 
+.suggest-panel button:hover { background: #eff6ff; }
 .suggest-panel strong,
-.suggest-panel span {
-    display: block;
-}
-
-.suggest-panel strong {
-    color: #0f172a;
-    font-size: 14px;
-}
-
 .suggest-panel span,
-.select-hint {
-    margin-top: 4px;
+.route-list strong,
+.route-list span { display: block; }
+.suggest-panel span,
+.empty-line,
+.weather-card p,
+.route-list span,
+.risk-card p {
     color: #64748b;
     font-size: 12px;
-    line-height: 1.5;
-}
-
-.select-hint {
-    padding-left: 4px;
+    line-height: 1.55;
 }
 
 .swap-btn {
@@ -809,10 +827,6 @@ select {
     background: #ffffff;
     color: #2563eb;
     cursor: pointer;
-}
-
-.preference-row {
-    margin-top: 12px;
 }
 
 .mode-tabs {
@@ -857,7 +871,8 @@ select {
     color: #ffffff;
 }
 
-.primary-btn:disabled {
+.primary-btn:disabled,
+.secondary-btn:disabled {
     opacity: 0.55;
     cursor: not-allowed;
 }
@@ -868,122 +883,11 @@ select {
     color: #1d4ed8;
 }
 
-.location-card {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr);
-    align-items: center;
-    gap: 10px;
-}
-
-.location-card span {
-    display: block;
-    margin-bottom: 4px;
-    color: #64748b;
-    font-size: 12px;
-}
-
-.location-card strong {
-    display: block;
-    color: #0f172a;
-    font-size: 13px;
-    line-height: 1.5;
-}
-
-.location-card i {
-    color: #94a3b8;
-}
-
-.weather-section {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-    margin-bottom: 14px;
-}
-
-.weather-card {
-    margin-bottom: 0;
-    min-height: 188px;
-}
-
-.weather-head span,
-.section-title {
-    color: #64748b;
-    font-size: 12px;
-    font-weight: 700;
-}
-
-.weather-head strong {
-    display: block;
-    margin-top: 4px;
-    color: #0f172a;
-    font-size: 15px;
-}
-
-.temperature {
-    margin-top: 12px;
-    color: #2563eb;
-    font-size: 30px;
-    font-weight: 800;
-}
-
-.weather-main {
-    margin-bottom: 10px;
-    color: #334155;
-    font-weight: 700;
-}
-
-dl {
-    margin: 0;
-}
-
-dl div {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 5px;
-    color: #64748b;
-    font-size: 12px;
-}
-
-dt,
-dd {
-    margin: 0;
-}
-
-.weather-card small,
-.empty-weather {
-    display: block;
-    margin-top: 10px;
-    color: #94a3b8;
-    font-size: 12px;
-    line-height: 1.5;
-}
-
-.section-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 10px;
-    color: #334155;
-}
-
-.advice-card p,
-.route-summary p {
-    margin: 8px 0 0;
-    color: #475569;
-    font-size: 13px;
-    line-height: 1.65;
-}
-
-.route-summary h3 {
-    margin: 4px 0 12px;
-    color: #0f172a;
-    font-size: 18px;
-}
-
 .metrics {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
+    margin-bottom: 10px;
 }
 
 .metrics div {
@@ -1005,7 +909,81 @@ dd {
 }
 
 .reason {
-    color: #0f172a !important;
+    color: #0f172a;
+    font-size: 13px;
+    line-height: 1.65;
+}
+
+.weather-section {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.weather-card {
+    margin-bottom: 0;
+    min-height: 158px;
+}
+
+.weather-head span {
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.weather-head strong {
+    display: block;
+    margin-top: 4px;
+    color: #0f172a;
+    font-size: 15px;
+}
+
+.temperature {
+    margin-top: 12px;
+    color: #2563eb;
+    font-size: 30px;
+    font-weight: 800;
+}
+
+.weather-main {
+    margin-bottom: 8px;
+    color: #334155;
+    font-weight: 700;
+}
+
+.weather-card small {
+    color: #94a3b8;
+    font-size: 12px;
+}
+
+.risk-level {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-weight: 800;
+}
+
+.risk-level small {
+    font-size: 11px;
+}
+
+.risk-card.low .risk-level {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.risk-card.medium .risk-level {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.risk-card.high .risk-level {
+    background: #fee2e2;
+    color: #991b1b;
 }
 
 .route-list {
@@ -1025,8 +1003,6 @@ dd {
     border-radius: 8px;
     background: #ffffff;
     color: #0f172a;
-    text-align: left;
-    cursor: pointer;
 }
 
 .route-list button.active {
@@ -1034,56 +1010,9 @@ dd {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
-.route-list strong,
-.route-list span {
-    display: block;
-}
-
-.route-list span {
-    margin-top: 4px;
-    color: #64748b;
-    font-size: 12px;
-}
-
-.guard-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-}
-
-.guard-item {
-    padding: 10px;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-}
-
-.guard-item strong {
-    display: block;
-    color: #0f172a;
-    font-size: 13px;
-    line-height: 1.4;
-}
-
-.guard-item span {
-    display: inline-block;
-    margin-top: 8px;
-    padding: 3px 8px;
-    border-radius: 999px;
-    background: #eef2ff;
-    color: #1d4ed8;
-    font-size: 12px;
-}
-
 @media (max-width: 900px) {
-    .transit-module {
-        flex-direction: column;
-    }
-
-    .map-shell {
-        min-height: 45vh;
-    }
-
+    .transit-module { flex-direction: column; }
+    .map-shell { min-height: 45vh; }
     .smart-panel {
         width: 100%;
         height: 55vh;
