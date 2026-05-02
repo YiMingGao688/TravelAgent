@@ -1,0 +1,85 @@
+/* ===================================
+   全局CSS变量定义
+   包含亮色和深色主题的颜色配置
+   =================================== */
+
+:root {
+    /* 主色调 */
+    --primary-color: #007AFF;
+    --primary-light: #E5F1FF;
+    --primary-hover: #0062CC;
+
+    /* 背景色 */
+    --bg-color: #F5F7FA;
+    --surface-color: #F5F7FA;
+    --sidebar-bg: #FFFFFF;
+    --card-bg: #FFFFFF;
+
+    /* 文字颜色 - 确保足够的对比度 */
+    --text-main: #1D1D1F;
+    --text-secondary: #6B7280;
+
+    /* 边框和阴影 */
+    --border-color: rgba(0, 0, 0, 0.08);
+    --header-bg: rgba(255, 255, 255, 0.85);
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.12);
+
+    /* 字体 */
+    --font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --transition-smooth: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* 深色模式 - 优化对比度，确保文字清晰可读 */
+:root[data-theme="dark"] {
+    /* 主色调 */
+    --primary-color: #0A84FF;
+    --primary-light: rgba(10, 132, 255, 0.2);
+    --primary-hover: #409CFF;
+
+    /* 背景色 - 使用更深的颜色提高对比度 */
+    --bg-color: #0D0D0D;
+    --surface-color: #1A1A1A;
+    --sidebar-bg: #141414;
+    --card-bg: #1F1F1F;
+
+    /* 文字颜色 - 提高对比度，确保可读性 */
+    --text-main: #FFFFFF;
+    --text-secondary: #A1A1A6;
+
+    /* 边框和阴影 */
+    --border-color: rgba(255, 255, 255, 0.12);
+    --header-bg: rgba(20, 20, 20, 0.9);
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+
+/* ===================================
+   全局基础样式 - 确保页面不滚动
+   =================================== */
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+body {
+    font-family: var(--font-family);
+    background-color: var(--bg-color);
+    color: var(--text-main);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* 隐藏未编译完成的Vue组件 */
+[v-cloak] {
+    display: none !important;
+}

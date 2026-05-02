@@ -1,0 +1,39 @@
+﻿server:
+  port: 8080
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/travel_agent
+    username: root
+    password: 123456
+
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+
+  ai:
+    zhipu:
+      api-key: a1f7dbb96416429fa99a4f26f7f75ce0.5qpxxq4ApTgeROpz
+      base-url: https://open.bigmodel.cn/api/paas/v4/chat/completions
+      model: glm-4-flash
+      temperature: 0.2
+      connect-timeout-ms: 10000
+      read-timeout-ms: 60000
+
+integration:
+  amap-key: 009df4d328454917bfae9bf2928e27b0
+  weather-key: b0f5772c66af6d69f7981c64718ed789
+  payment-demo-key: ${PAYMENT_DEMO_KEY:placeholder}
+
+mybatis-plus:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.itheima.travelagent2.modules
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: assign_id
+amap:
+  key: 009df4d328454917bfae9bf2928e27b0

@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智慧旅游AI规划系统</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+    <style>
+        :root {
+            /* 原版默认浅色变量 */
+            --primary-color: #007AFF;
+            --primary-light: #E5F1FF;
+            --bg-color: #F5F7FA;
+            --sidebar-bg: #FFFFFF;
+            --card-bg: #FFFFFF;
+            --text-main: #1D1D1F;
+            --text-secondary: #86868B;
+            --border-color: rgba(0, 0, 0, 0.06);
+            --header-bg: rgba(245, 247, 250, 0.8);
+            --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+            --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.08);
+            --font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+        }
+
+        /* 纯正GPT风格深色模式变量 */
+        :root[data-theme="dark"] {
+            --primary-color: #0A84FF;
+            --primary-light: rgba(10, 132, 255, 0.15);
+            --bg-color: #202123;
+            --sidebar-bg: #171717;
+            --card-bg: #343541;
+            --text-main: #ECECF1;
+            --text-secondary: #9CA3AF;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --header-bg: rgba(32, 33, 35, 0.8);
+            --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+            --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            height: 100vh;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        #app {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        .sidebar {
+            width: 260px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 20px 0 0 0;
+            z-index: 10;
+            transition: background-color 0.3s ease;
+        }
+
+        .logo-container {
+            padding: 0 24px 30px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #007AFF, #00C6FF);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 18px;
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+        }
+
+        .logo-text {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .nav-menu {
+            flex: 1;
+            padding: 0 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-weight: 500;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        .nav-item:hover {
+            background-color: var(--primary-light);
+            color: var(--primary-color);
+        }
+
+        .nav-item.active {
+            background-color: var(--primary-color);
+            color: white;
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.2);
+        }
+
+        .nav-item i {
+            width: 20px;
+            text-align: center;
+            font-size: 16px;
+        }
+
+        /* ---------------- 用户面板样式 (保留你要的左下角) ---------------- */
+        .user-container {
+            padding: 16px;
+            position: relative;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .user-profile:hover {
+            background-color: var(--border-color);
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background-color: var(--primary-color);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .user-info {
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .user-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-main);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .user-profile .fa-ellipsis {
+            color: var(--text-secondary);
+        }
+
+        .settings-menu {
+            position: absolute;
+            bottom: calc(100% + 5px);
+            left: 16px;
+            right: 16px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: var(--shadow-md);
+            padding: 8px;
+            z-index: 100;
+        }
+
+        .menu-item {
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            color: var(--text-main);
+            transition: all 0.2s;
+        }
+
+        .menu-item:hover {
+            background-color: var(--primary-light);
+            color: var(--primary-color);
+        }
+
+        .menu-divider {
+            height: 1px;
+            background: var(--border-color);
+            margin: 6px 0;
+        }
+
+        /* ---------------- 主内容区域 ---------------- */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .header {
+            height: 64px;
+            padding: 0 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--header-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border-color);
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 10;
+        }
+
+        .header-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #34C759;
+            background: rgba(52, 199, 89, 0.1);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+
+        .status-badge i {
+            font-size: 8px;
+        }
+
+        .chat-container {
+            flex: 1;
+            padding: 84px 32px 100px;
+            overflow-y: auto;
+            scroll-behavior: smooth;
+        }
+
+        .chat-container::-webkit-scrollbar {
+            width: 6px;
+        }
+        .chat-container::-webkit-scrollbar-thumb {
+            background: rgba(0,0,0,0.1);
+            border-radius: 10px;
+        }
+        :root[data-theme="dark"] .chat-container::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.1);
+        }
+
+        .message-row {
+            display: flex;
+            margin-bottom: 24px;
+            animation: fadeIn 0.4s ease forwards;
+        }
+
+        .message-row.user {
+            justify-content: flex-end;
+        }
+
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 16px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .ai .avatar {
+            background-color: var(--card-bg);
+            color: var(--primary-color);
+            margin-right: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        .user .avatar {
+            background-color: var(--primary-color);
+            color: white;
+            margin-left: 12px;
+            order: 2;
+        }
+
+        .message-content {
+            max-width: 65%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .user .message-content {
+            align-items: flex-end;
+        }
+
+        .bubble {
+            padding: 14px 18px;
+            font-size: 15px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .ai .bubble {
+            background-color: var(--card-bg);
+            color: var(--text-main);
+            border-radius: 18px 18px 18px 4px;
+            border: 1px solid var(--border-color);
+        }
+
+        .user .bubble {
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 18px 18px 4px 18px;
+        }
+
+        .time {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 6px;
+            padding: 0 4px;
+        }
+
+        .input-wrapper {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 20px 32px;
+            background: linear-gradient(to top, var(--bg-color) 70%, transparent);
+        }
+
+        .input-box {
+            background: var(--card-bg);
+            border-radius: 20px;
+            box-shadow: var(--shadow-md);
+            padding: 12px 16px;
+            display: flex;
+            align-items: flex-end;
+            gap: 12px;
+            border: 1px solid var(--border-color);
+            transition: all 0.3s;
+        }
+
+        .input-box:focus-within {
+            border-color: var(--primary-color);
+            box-shadow: 0 8px 24px rgba(0, 122, 255, 0.15);
+        }
+
+        textarea {
+            flex: 1;
+            border: none;
+            outline: none;
+            resize: none;
+            background: transparent;
+            font-family: var(--font-family);
+            font-size: 15px;
+            color: var(--text-main);
+            height: 44px;
+            max-height: 120px;
+            padding: 10px 0;
+            line-height: 24px;
+        }
+
+        textarea::placeholder {
+            color: var(--text-secondary);
+        }
+
+        .action-btns {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-bottom: 4px;
+        }
+
+        .icon-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.2s;
+        }
+
+        .icon-btn:hover {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+        }
+
+        .send-btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 0 20px;
+            height: 36px;
+            border-radius: 18px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+
+        .send-btn:hover:not(:disabled) {
+            background-color: #0062CC;
+            transform: translateY(-1px);
+        }
+
+        .send-btn:disabled {
+            background-color: #A0CFFF;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        .empty-module {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            font-size: 16px;
+        }
+
+        .empty-module i {
+            font-size: 64px;
+            margin-bottom: 20px;
+            color: var(--border-color);
+        }
+
+        .history-container {
+            flex: 1;
+            padding: 84px 32px 40px;
+            overflow-y: auto;
+        }
+        .history-header {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .history-item {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 18px;
+            margin-bottom: 12px;
+            box-shadow: var(--shadow-sm);
+        }
+        .history-user {
+            font-weight: 500;
+            color: var(--primary-color);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .history-ai {
+            line-height: 1.6;
+            color: var(--text-main);
+            display: flex;
+            align-items: start;
+            gap: 8px;
+        }
+        .history-time {
+            text-align: right;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 10px;
+        }
+
+        /* ======== 个人档案设置模态框 ======== */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: var(--card-bg);
+            width: 480px;
+            max-width: 90%;
+            border-radius: 16px;
+            box-shadow: var(--shadow-md);
+            padding: 24px;
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            animation: fadeIn 0.3s ease;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .modal-close { cursor: pointer; color: var(--text-secondary); font-size: 20px; }
+        .modal-close:hover { color: var(--text-main); }
+
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 8px; color: var(--text-main); }
+
+        .form-control {
+            width: 100%;
+            padding: 12px 14px;
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            color: var(--text-main);
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s;
+        }
+        .form-control:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(0,122,255,0.1); }
+
+        .modal-footer { margin-top: 24px; display: flex; justify-content: flex-end; gap: 12px; }
+        .btn-cancel { padding: 10px 18px; border-radius: 10px; border: 1px solid var(--border-color); background: transparent; color: var(--text-main); cursor: pointer; font-weight: 500;}
+        .btn-save { padding: 10px 18px; border-radius: 10px; border: none; background: var(--primary-color); color: white; cursor: pointer; font-weight: 500;}
+        .btn-save:hover { background: #0062CC; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .typing-indicator { display: flex; gap: 4px; padding: 6px 4px; }
+        .dot { width: 6px; height: 6px; background-color: var(--text-secondary); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
+        .dot:nth-child(1) { animation-delay: -0.32s; }
+        .dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+
+        /* 全局遮罩用于点击外部关闭设置 */
+        .overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 90; }
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.2s; transform: translateY(0); }
+        .fade-enter-from, .fade-leave-to { opacity: 0; transform: translateY(10px); }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <!-- 隐形遮罩，用于点击外部关闭设置菜单 -->
+    <div class="overlay" v-if="showSettings" @click="showSettings = false"></div>
+
+    <aside class="sidebar">
+        <div class="logo-container">
+            <div class="logo-icon">
+                <i class="fa-solid fa-plane-departure"></i>
+            </div>
+            <div class="logo-text">智慧出行助手</div>
+        </div>
+        <nav class="nav-menu">
+            <div v-for="menu in menus" :key="menu.id"
+                 :class="['nav-item', { active: activeMenu === menu.id }]"
+                 @click="activeMenu = menu.id">
+                <i :class="['fa-solid', menu.icon]"></i>
+                <span>{{ menu.name }}</span>
+            </div>
+        </nav>
+
+        <!-- 保留你要的左下角：个人中心与设置 -->
+        <div class="user-container">
+            <transition name="fade">
+                <div class="settings-menu" v-if="showSettings">
+                    <div class="menu-item" @click="openProfileModal">
+                        <i class="fa-regular fa-id-card"></i> 个人偏好设置
+                    </div>
+                    <div class="menu-item" @click="toggleTheme">
+                        <i v-if="isDarkMode" class="fa-regular fa-sun"></i>
+                        <i v-else class="fa-solid fa-moon"></i>
+                        {{ isDarkMode ? '切换浅色模式' : '切换深色模式' }}
+                    </div>
+                    <div class="menu-divider"></div>
+                    <div class="menu-item" @click="handleLogout">
+                        <i class="fa-solid fa-right-from-bracket"></i> 退出登录
+                    </div>
+                </div>
+            </transition>
+
+            <div class="user-profile" @click="showSettings = !showSettings">
+                <div class="user-avatar">
+                    <i class="fa-solid fa-user"></i>
+                </div>
+                <div class="user-info">
+                    <div class="user-name">{{ userName }}</div>
+                </div>
+                <i class="fa-solid fa-ellipsis"></i>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <header class="header">
+            <div class="header-title">{{ currentMenuName }}</div>
+            <div class="status-badge" v-if="activeMenu === 'ai'">
+                <i class="fa-solid fa-circle"></i> AI 在线就绪
+            </div>
+        </header>
+
+        <template v-if="activeMenu === 'ai'">
+            <div class="chat-container" ref="chatRef">
+                <div v-for="(msg, index) in messages" :key="index" :class="['message-row', msg.role]">
+                    <div class="avatar">
+                        <i v-if="msg.role === 'ai'" class="fa-solid fa-robot"></i>
+                        <i v-else class="fa-solid fa-user"></i>
+                    </div>
+                    <div class="message-content">
+                        <div class="bubble" v-html="msg.content.replace(/\\n/g, '<br>')"></div>
+                        <div class="time">{{ msg.time }}</div>
+                    </div>
+                </div>
+
+                <div v-if="isLoading" class="message-row ai">
+                    <div class="avatar"><i class="fa-solid fa-robot"></i></div>
+                    <div class="message-content">
+                        <div class="bubble">
+                            <div class="typing-indicator">
+                                <span class="dot"></span>
+                                <span class="dot"></span>
+                                <span class="dot"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-wrapper">
+                <div class="input-box">
+                    <textarea
+                            v-model="inputText"
+                            @keydown="handleKeydown"
+                            placeholder="告诉AI您的想法，例如：帮我规划一份去大理的三天两晚攻略..."
+                    ></textarea>
+                    <div class="action-btns">
+                        <button class="icon-btn" @click="clearInput" title="清空内容">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                        <button class="send-btn" @click="sendMessage" :disabled="!inputText.trim() || isLoading">
+                            <i class="fa-solid fa-paper-plane"></i> 发送
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <template v-else-if="activeMenu === 'custom'">
+            <div class="empty-module">
+                <i class="fa-solid fa-map-location-dot"></i>
+                <p>旅游行程定制模块开发中...</p>
+            </div>
+        </template>
+
+        <template v-else-if="activeMenu === 'transit'">
+            <div class="empty-module">
+                <i class="fa-solid fa-route"></i>
+                <p>交通路线查询模块开发中...</p>
+            </div>
+        </template>
+
+        <template v-else-if="activeMenu === 'history'">
+            <div class="history-container">
+                <div class="history-header">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <span>聊天历史记录</span>
+                </div>
+
+                <div class="history-item" v-for="item in historyList" :key="item.id">
+                    <div class="history-user">
+                        <i class="fa-solid fa-user"></i>
+                        {{ item.userMessage }}
+                    </div>
+                    <div class="history-ai">
+                        <i class="fa-solid fa-robot"></i>
+                        <span v-html="item.aiResponse.replace(/\\n/g, '<br>')"></span>
+                    </div>
+                    <div class="history-time">{{ item.createTime }}</div>
+                </div>
+
+                <div class="empty-module" v-if="historyList.length === 0">
+                    <i class="fa-solid fa-inbox"></i>
+                    <p>暂无聊天记录</p>
+                </div>
+            </div>
+        </template>
+    </main>
+
+    <!-- AI定制化：个人出行档案设置模态框 -->
+    <div class="modal-overlay" v-if="showProfileModal" @click.self="closeProfileModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>出行偏好档案</span>
+                <i class="fa-solid fa-xmark modal-close" @click="closeProfileModal"></i>
+            </div>
+
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>常驻出发城市</label>
+                    <input type="text" class="form-control" v-model="profile.city" placeholder="例如：北京、上海">
+                </div>
+                <div class="form-group">
+                    <label>偏好交通工具</label>
+                    <select class="form-control" v-model="profile.transport">
+                        <option value="不限">不限 (让AI智能推荐)</option>
+                        <option value="飞机">飞机为主</option>
+                        <option value="高铁">高铁/动车</option>
+                        <option value="自驾">自驾游</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>旅行风格偏好</label>
+                    <select class="form-control" v-model="profile.style">
+                        <option value="深度人文">深度人文体验</option>
+                        <option value="休闲度假">休闲放松度假</option>
+                        <option value="特种兵打卡">特种兵式打卡</option>
+                        <option value="自然探险">自然风光探险</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>特殊需求与备注 (可选)</label>
+                    <textarea class="form-control" v-model="profile.note" rows="3" placeholder="例如：有携老带幼需求、吃素食、需要无障碍通道等，便于AI为您精准避坑..."></textarea>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn-cancel" @click="closeProfileModal">取消</button>
+                <button class="btn-save" @click="saveProfile">保存并告诉AI</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 登录拦截：未登录直接跳登录页
+    if (!sessionStorage.getItem("loginUser")) {
+        window.location.href = "/login.html";
+    }
+
+    const { createApp, ref, computed, nextTick, watch, onMounted } = Vue;
+
+    createApp({
+        setup() {
+            const activeMenu = ref('ai');
+            const inputText = ref('');
+            const isLoading = ref(false);
+            const chatRef = ref(null);
+            const historyList = ref([]);
+
+            // 新增状态：设置相关
+            const showSettings = ref(false);
+            const isDarkMode = ref(false);
+            const userName = ref(sessionStorage.getItem("loginUser") || "游客用户");
+
+            // 新增状态：个人档案
+            const showProfileModal = ref(false);
+            const profile = ref({ city: '', transport: '不限', style: '休闲度假', note: '' });
+
+            const menus =[
+                { id: 'ai', name: '智能AI咨询', icon: 'fa-wand-magic-sparkles' },
+                { id: 'custom', name: '旅游行程定制', icon: 'fa-map-location-dot' },
+                { id: 'transit', name: '交通路线查询', icon: 'fa-route' },
+                { id: 'history', name: '历史记录', icon: 'fa-clock-rotate-left' }
+            ];
+
+            const messages = ref([
+                {
+                    role: 'ai',
+                    content: '您好！我是您的专属智慧旅游AI规划助手。✈️\n\n请问有什么可以帮您？无论是行程定制、当地美食推荐，还是交通路线查询，我都能为您提供专业的解答！',
+                    time: getCurrentTime()
+                }
+            ]);
+
+            // 初始化主题与档案
+            onMounted(() => {
+                const savedTheme = localStorage.getItem('theme');
+                if(savedTheme === 'dark') {
+                    isDarkMode.value = true;
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                }
+                const savedProfile = localStorage.getItem('userProfile');
+                if(savedProfile) {
+                    profile.value = JSON.parse(savedProfile);
+                }
+            });
+
+            watch(activeMenu, (val) => {
+                if (val === 'history') {
+                    loadHistory();
+                }
+            });
+
+            async function loadHistory() {
+                try {
+                    const res = await axios.get('/api/chat/list');
+                    historyList.value = res.data.data;
+                } catch (e) {
+                    console.error("加载历史记录失败", e);
+                }
+            }
+
+            const currentMenuName = computed(() => {
+                return menus.find(m => m.id === activeMenu.value)?.name || '';
+            });
+
+            function getCurrentTime() {
+                const now = new Date();
+                return now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+            }
+
+            const scrollToBottom = async () => {
+                await nextTick();
+                if (chatRef.value) {
+                    chatRef.value.scrollTop = chatRef.value.scrollHeight;
+                }
+            };
+
+            // 【新增】主题切换逻辑
+            const toggleTheme = () => {
+                isDarkMode.value = !isDarkMode.value;
+                if(isDarkMode.value) {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                    localStorage.setItem('theme', 'dark');
+                } else {
+                    document.documentElement.removeAttribute('data-theme');
+                    localStorage.setItem('theme', 'light');
+                }
+                showSettings.value = false;
+            };
+
+            // 【新增】退出登录
+            const handleLogout = () => {
+                sessionStorage.removeItem("loginUser");
+                window.location.href = "/login.html";
+            };
+
+            // 【新增】档案模态框操作
+            const openProfileModal = () => {
+                showSettings.value = false;
+                showProfileModal.value = true;
+            };
+
+            const closeProfileModal = () => {
+                showProfileModal.value = false;
+            };
+
+            const saveProfile = () => {
+                localStorage.setItem('userProfile', JSON.stringify(profile.value));
+                closeProfileModal();
+                // 在对话框里通知 AI
+                messages.value.push({
+                    role: 'ai',
+                    content: `档案已同步！我已记住您常驻【${profile.value.city || '保密'}】，偏好【${profile.value.transport}】出行，风格是【${profile.value.style}】。之后的定制我会为您提供更精准的推荐。`,
+                    time: getCurrentTime()
+                });
+                scrollToBottom();
+            };
+
+            async function typeText(index, fullText, speed = 25) {
+                isLoading.value = false;
+                let current = '';
+                for (let i = 0; i < fullText.length; i++) {
+                    current += fullText[i];
+                    messages.value[index].content = current;
+                    await nextTick();
+                    scrollToBottom();
+                    await new Promise(resolve => setTimeout(resolve, speed));
+                }
+            }
+
+            const sendMessage = async () => {
+                if (!inputText.value.trim() || isLoading.value) return;
+
+                const userMsg = inputText.value.trim();
+
+                messages.value.push({
+                    role: 'user',
+                    content: userMsg,
+                    time: getCurrentTime()
+                });
+
+                inputText.value = '';
+                isLoading.value = true;
+                scrollToBottom();
+
+                try {
+                    const response = await axios.post('http://localhost:8080/api/chat/send', {
+                        message: userMsg
+                    });
+
+                    const fullReply = response.data.data.aiResponse || "响应异常";
+                    messages.value.push({ role: 'ai', content: '', time: getCurrentTime() });
+                    const lastIdx = messages.value.length - 1;
+                    await typeText(lastIdx, fullReply);
+
+                } catch (error) {
+                    messages.value.push({
+                        role: 'ai',
+                        content: 'AI服务异常，请检查Ollama是否启动',
+                        time: getCurrentTime()
+                    });
+                    isLoading.value = false;
+                }
+
+                scrollToBottom();
+            };
+
+            const clearInput = () => {
+                inputText.value = '';
+            };
+
+            const handleKeydown = (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            };
+
+            return {
+                activeMenu,
+                menus,
+                messages,
+                inputText,
+                isLoading,
+                chatRef,
+                historyList,
+                currentMenuName,
+
+                // 新增暴漏给模板的状态
+                showSettings,
+                isDarkMode,
+                userName,
+                showProfileModal,
+                profile,
+
+                // 新增方法
+                toggleTheme,
+                handleLogout,
+                openProfileModal,
+                closeProfileModal,
+                saveProfile,
+
+                sendMessage,
+                clearInput,
+                handleKeydown
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>
