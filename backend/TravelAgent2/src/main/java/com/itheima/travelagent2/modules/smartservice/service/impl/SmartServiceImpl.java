@@ -159,6 +159,28 @@ public class SmartServiceImpl implements SmartService {
     }
 
     @Override
+    public SmartServiceRecord create(SmartServiceRecord record) {
+        recordMapper.insert(record);
+        return record;
+    }
+
+    @Override
+    public SmartServiceRecord update(Long id, SmartServiceRecord record) {
+        SmartServiceRecord exists = recordMapper.selectById(id);
+        if (exists == null) {
+            return null;
+        }
+        record.setId(id);
+        recordMapper.updateById(record);
+        return recordMapper.selectById(id);
+    }
+
+    @Override
+    public SmartServiceRecord getById(Long id) {
+        return recordMapper.selectById(id);
+    }
+
+    @Override
     public List<SmartServiceRecord> listAll() {
         LambdaQueryWrapper<SmartServiceRecord> wrapper = new LambdaQueryWrapper<>();
         wrapper.orderByDesc(SmartServiceRecord::getCreateTime);
@@ -166,8 +188,8 @@ public class SmartServiceImpl implements SmartService {
     }
 
     @Override
-    public void deleteById(Long id) {
-        recordMapper.deleteById(id);
+    public boolean deleteById(Long id) {
+        return recordMapper.deleteById(id) > 0;
     }
 
     private String toJson(Object value) {

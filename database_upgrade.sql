@@ -129,3 +129,44 @@ ALTER TABLE smart_service_record
   ADD COLUMN IF NOT EXISTS status VARCHAR(40) DEFAULT 'GENERATED',
   MODIFY COLUMN create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   MODIFY COLUMN update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+
+CREATE TABLE IF NOT EXISTS travel_service_report (
+  id BIGINT NOT NULL PRIMARY KEY,
+  user_id VARCHAR(120) NOT NULL,
+  trip_plan_id BIGINT DEFAULT NULL,
+  title VARCHAR(200) DEFAULT NULL,
+  start_place VARCHAR(120) DEFAULT NULL,
+  end_place VARCHAR(120) DEFAULT NULL,
+  report_content LONGTEXT NOT NULL,
+  report_summary VARCHAR(500) DEFAULT NULL,
+  source_type VARCHAR(60) DEFAULT 'USER_SAVE',
+  create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_report_user (user_id),
+  INDEX idx_report_trip (trip_plan_id),
+  INDEX idx_report_create_time (create_time),
+  INDEX idx_report_route (start_place, end_place)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS trip_context (
+  id BIGINT NOT NULL PRIMARY KEY,
+  session_id VARCHAR(64) NOT NULL,
+  user_id VARCHAR(64) DEFAULT NULL,
+  start_place VARCHAR(100) DEFAULT NULL,
+  end_place VARCHAR(100) DEFAULT NULL,
+  scene_type VARCHAR(100) DEFAULT NULL,
+  days INT DEFAULT NULL,
+  preference VARCHAR(200) DEFAULT NULL,
+  budget VARCHAR(100) DEFAULT NULL,
+  companion_type VARCHAR(100) DEFAULT NULL,
+  transport_mode VARCHAR(100) DEFAULT NULL,
+  pace_preference VARCHAR(100) DEFAULT NULL,
+  walking_preference VARCHAR(100) DEFAULT NULL,
+  hotel_preference VARCHAR(255) DEFAULT NULL,
+  food_preference VARCHAR(255) DEFAULT NULL,
+  special_needs VARCHAR(500) DEFAULT NULL,
+  create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_trip_context_session (session_id),
+  KEY idx_trip_context_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

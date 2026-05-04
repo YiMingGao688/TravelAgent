@@ -598,8 +598,8 @@ onBeforeUnmount(destroyMap)
                 <section class="panel-card actions-card">
                     <div class="section-title"><i class="fa-solid fa-forward"></i><span>推荐操作</span></div>
                     <button class="secondary-btn" :disabled="!activeRoute" @click="emit('booking')">
-                        <i class="fa-solid fa-paper-plane"></i>
-                        <span>导入一站式服务</span>
+                        <i class="fa-solid fa-route"></i>
+                        <span>导入行程定制</span>
                     </button>
                 </section>
             </div>

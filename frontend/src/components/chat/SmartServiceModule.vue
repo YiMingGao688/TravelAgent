@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { generateSmartService, generateTravelReport, listSmartServices } from '../../utils/api.js'
+import { generateSmartService, generateTravelReport, listSmartServices, saveServiceReport } from '../../utils/api.js'
 
 const props = defineProps({
     profile: { type: Object, default: () => ({}) },
@@ -24,6 +24,7 @@ const loading = ref(false)
 const reportLoading = ref(false)
 const records = ref([])
 const reportRecord = ref(null)
+const reportSaved = ref(false)
 const statusMessage = ref('')
 const form = ref(defaultForm())
 
@@ -43,7 +44,9 @@ watch(() => props.serviceContext, value => {
         specialNeed: value.specialNeed || form.value.specialNeed,
         budget: value.budget || form.value.budget,
         passengerInfo: value.passengerInfo || form.value.passengerInfo,
-        extraRequirement: value.aiPlan ? `已导入 AI 方案：${value.aiPlan.slice(0, 280)}` : form.value.extraRequirement
+        extraRequirement: value.imported
+            ? buildImportedRequirement(value)
+            : form.value.extraRequirement
     }
     statusMessage.value = value.imported ? '已从 AI 方案导入一站式服务信息' : ''
 }, { deep: true, immediate: true })
@@ -71,6 +74,17 @@ function defaultForm() {
     }
 }
 
+function buildImportedRequirement(value) {
+    const parts = []
+    if (value.startPlace || value.endPlace) {
+        parts.push(`行程方向：${value.startPlace || '出发地'} 到 ${value.endPlace || '目的地'}`)
+    }
+    if (value.preference) parts.push(`出行偏好：${value.preference}`)
+    if (value.budget) parts.push(`预算：${value.budget}`)
+    if (value.specialNeed) parts.push(`特殊需求：${value.specialNeed}`)
+    return parts.length ? parts.join('；') : '已导入行程定制结果，请生成完整出行服务安排。'
+}
+
 async function generate() {
     loading.value = true
     statusMessage.value = '正在生成服务方案...'
@@ -84,7 +98,7 @@ async function generate() {
             preference: form.value.preference || props.profile.style || props.profile.transport || ''
         }
         const result = await generateSmartService(payload)
-        records.value.unshift(result.data)
+        await loadRecords()
         statusMessage.value = '服务方案已生成并保存'
     } catch (error) {
         statusMessage.value = `生成失败：${error.message}`
@@ -117,12 +131,37 @@ async function generateReport() {
         }
         const result = await generateTravelReport(payload)
         reportRecord.value = result.data
-        records.value.unshift(result.data)
-        statusMessage.value = '出行服务报告已生成并保存'
+        reportSaved.value = false
+        await loadRecords()
+        statusMessage.value = '出行服务报告已生成，可点击保存报告'
     } catch (error) {
         statusMessage.value = `报告生成失败：${error.message}`
     } finally {
         reportLoading.value = false
+    }
+}
+
+async function saveReport() {
+    if (!reportRecord.value?.responsePayload) {
+        statusMessage.value = '请先生成报告'
+        return
+    }
+    try {
+        const content = reportRecord.value.responsePayload
+        await saveServiceReport({
+            userId: sessionStorage.getItem('loginUser') || 'guest',
+            tripPlanId: props.routeData.tripPlanId || null,
+            title: reportRecord.value.title,
+            startPlace: form.value.startPlace || props.routeData.from || '',
+            endPlace: form.value.endPlace || props.routeData.to || '',
+            reportContent: content,
+            reportSummary: content.length > 160 ? content.slice(0, 160) : content,
+            sourceType: 'SMART_SERVICE'
+        })
+        reportSaved.value = true
+        statusMessage.value = '报告已保存，可在历史出行服务报告中查看。'
+    } catch (error) {
+        statusMessage.value = `保存报告失败：${error.message}`
     }
 }
 
@@ -213,6 +252,21 @@ function serviceTitle(type) {
     return services.find(item => item.id === type)?.name || (type === 'TRAVEL_REPORT' ? '出行服务报告' : '出行服务')
 }
 
+function recordStatusText(status) {
+    const statusMap = {
+        SAVED: '已保存',
+        GENERATED: '已生成',
+        COMPLETED: '已完成',
+        PENDING: '待处理',
+        FAILED: '生成失败'
+    }
+    return statusMap[status] || status || '已保存'
+}
+
+function servicePanelStateText() {
+    return latestRecord.value ? '已生成方案' : '待生成'
+}
+
 onMounted(loadRecords)
 </script>
 
@@ -232,6 +286,10 @@ onMounted(loadRecords)
                 <button class="primary" :disabled="reportLoading" @click="generateReport">
                     <i class="fa-solid fa-file-lines"></i>
                     <span>{{ reportLoading ? '正在生成报告...' : '生成出行服务报告' }}</span>
+                </button>
+                <button class="ghost" :disabled="!reportRecord || reportSaved" @click="saveReport">
+                    <i class="fa-solid fa-floppy-disk"></i>
+                    <span>{{ reportSaved ? '报告已保存' : '保存报告' }}</span>
                 </button>
             </div>
         </section>
@@ -295,7 +353,7 @@ onMounted(loadRecords)
                         <h2>服务方案</h2>
                         <p>按行前、行中、行后拆解为可执行节点</p>
                     </div>
-                    <span>{{ records.length }} 条</span>
+                    <span>{{ servicePanelStateText() }}</span>
                 </div>
 
                 <div v-if="!latestRecord" class="empty">
@@ -306,7 +364,7 @@ onMounted(loadRecords)
                 <article v-else class="record">
                     <div class="record-head">
                         <strong>{{ latestRecord.title || serviceTitle(latestRecord.serviceType) }}</strong>
-                        <span>{{ latestRecord.status || '已保存' }}</span>
+                        <span>{{ recordStatusText(latestRecord.status) }}</span>
                     </div>
                     <div class="route-line">{{ latestRecord.startPlace || '出发地' }} → {{ latestRecord.endPlace || '目的地' }}</div>
 

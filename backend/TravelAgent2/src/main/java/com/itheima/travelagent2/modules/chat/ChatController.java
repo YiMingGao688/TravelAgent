@@ -1,5 +1,6 @@
 package com.itheima.travelagent2.modules.chat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itheima.travelagent2.common.Result;
 import com.itheima.travelagent2.modules.chat.dto.ChatRequestDTO;
 import com.itheima.travelagent2.modules.chat.entity.ChatRecord;
@@ -23,9 +24,11 @@ public class ChatController {
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private final ChatService chatService;
+    private final ObjectMapper objectMapper;
 
-    public ChatController(ChatService chatService) {
+    public ChatController(ChatService chatService, ObjectMapper objectMapper) {
         this.chatService = chatService;
+        this.objectMapper = objectMapper;
     }
 
     @PostMapping(value = "/stream", produces = "text/event-stream;charset=UTF-8")
@@ -37,8 +40,8 @@ public class ChatController {
             return emitter;
         }
 
-        executor.execute(() -> chatService.streamChat(dto).subscribe(
-                chunk -> send(emitter, "message", chunk),
+        executor.execute(() -> chatService.streamChatEvents(dto).subscribe(
+                event -> send(emitter, event.getEventName(), encodeEventData(event.getData())),
                 error -> sendAndComplete(emitter, "error", "AI service error: " + error.getMessage()),
                 () -> sendAndComplete(emitter, "done", "[DONE]")
         ));
@@ -94,5 +97,16 @@ public class ChatController {
     private void sendAndComplete(SseEmitter emitter, String eventName, String data) {
         send(emitter, eventName, data);
         emitter.complete();
+    }
+
+    private String encodeEventData(Object data) {
+        if (data == null || data instanceof String) {
+            return data == null ? "" : String.valueOf(data);
+        }
+        try {
+            return objectMapper.writeValueAsString(data);
+        } catch (Exception e) {
+            return "{}";
+        }
     }
 }

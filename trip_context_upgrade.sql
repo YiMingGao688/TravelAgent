@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS trip_context (
+    id BIGINT PRIMARY KEY,
+    session_id VARCHAR(64) NOT NULL,
+    user_id VARCHAR(64) DEFAULT NULL,
+    start_place VARCHAR(100) DEFAULT NULL,
+    end_place VARCHAR(100) DEFAULT NULL,
+    scene_type VARCHAR(100) DEFAULT NULL,
+    days INT DEFAULT NULL,
+    preference VARCHAR(200) DEFAULT NULL,
+    budget VARCHAR(100) DEFAULT NULL,
+    companion_type VARCHAR(100) DEFAULT NULL,
+    transport_mode VARCHAR(100) DEFAULT NULL,
+    pace_preference VARCHAR(100) DEFAULT NULL,
+    walking_preference VARCHAR(100) DEFAULT NULL,
+    hotel_preference VARCHAR(255) DEFAULT NULL,
+    food_preference VARCHAR(255) DEFAULT NULL,
+    special_needs VARCHAR(500) DEFAULT NULL,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_trip_context_session (session_id),
+    KEY idx_trip_context_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

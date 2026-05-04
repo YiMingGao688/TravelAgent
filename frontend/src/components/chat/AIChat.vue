@@ -14,7 +14,6 @@ const emit = defineEmits([
     'interrupt',
     'savePlan',
     'importTransit',
-    'importCustom',
     'importSmart'
 ])
 
@@ -137,14 +136,6 @@ defineExpose({ scrollToBottom, chatRef })
                         <button class="plan-btn ghost" @click="emit('importTransit', msg)">
                             <i class="fa-solid fa-map-location-dot"></i>
                             <span>导入交通</span>
-                        </button>
-                        <button class="plan-btn ghost" @click="emit('importCustom', msg)">
-                            <i class="fa-solid fa-route"></i>
-                            <span>导入行程</span>
-                        </button>
-                        <button class="plan-btn ghost" @click="emit('importSmart', msg)">
-                            <i class="fa-solid fa-briefcase-medical"></i>
-                            <span>导入一站式服务</span>
                         </button>
                     </div>
                 </div>

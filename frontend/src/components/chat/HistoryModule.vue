@@ -10,17 +10,73 @@ function formatTime(value) {
     return String(value).replace('T', ' ').slice(0, 16)
 }
 
-function displayTitle(item) {
-    if (item.title && !/AI_CHAT|智能出行方案/.test(item.title)) return item.title
-    if (item.startPlace && item.endPlace) return `${item.startPlace} 到 ${item.endPlace} 的出行方案`
+function parseContent(item) {
+    const raw = String(item?.content || '').trim()
+    if (!raw) return null
+    try {
+        return JSON.parse(raw)
+    } catch {
+        return null
+    }
+}
+
+function planTitle(item) {
+    const json = parseContent(item)
+    if (json?.title) return json.title
+    if (item.title && !/AI_CHAT|智能出行方案|travel plan/i.test(item.title)) return item.title
+    if (item.startPlace && item.endPlace) return `${item.startPlace} 到 ${item.endPlace} 出行方案`
     if (item.endPlace) return `${item.endPlace} 出行方案`
     return '我的出行方案'
 }
 
-function displayRoute(item) {
+function routeText(item) {
     const start = item.startPlace || '待补充起点'
     const end = item.endPlace || '待补充终点'
     return `${start} → ${end}`
+}
+
+function summaryText(item) {
+    const json = parseContent(item)
+    if (json?.summary) return json.summary
+    const text = String(item.content || '').replace(/\s+/g, ' ').trim()
+    return text || '暂无方案内容'
+}
+
+function dayPlans(item) {
+    const json = parseContent(item)
+    const days = json?.days || json?.dailyPlans || json?.itinerary || []
+    return Array.isArray(days) ? days.slice(0, 3) : []
+}
+
+function dayTitle(day, index) {
+    return day?.title || day?.day || `第 ${index + 1} 天`
+}
+
+function dayDetail(day) {
+    if (typeof day === 'string') return day
+    const parts = [
+        day?.morning && `上午：${day.morning}`,
+        day?.afternoon && `下午：${day.afternoon}`,
+        day?.evening && `晚上：${day.evening}`,
+        day?.traffic && `交通：${day.traffic}`,
+        day?.food && `餐饮：${day.food}`,
+        day?.risk && `提醒：${day.risk}`
+    ].filter(Boolean)
+    return parts.join('；') || day?.content || day?.plan || ''
+}
+
+function suitableFor(item) {
+    const json = parseContent(item)
+    return json?.suitableFor || json?.crowdType || ''
+}
+
+function sourceName(value) {
+    const map = {
+        AI_CHAT: 'AI 咨询',
+        ITINERARY: '行程定制',
+        ADMIN: '管理端'
+    }
+    return map[value] || value || '用户保存'
 }
 </script>
 
@@ -30,18 +86,18 @@ function displayRoute(item) {
             <div>
                 <span class="eyebrow">Saved Plans</span>
                 <h2>历史方案</h2>
-                <p>保存过的出行方案可以继续导入路线规划或行程定制。</p>
+                <p>已保存的出行方案会在这里统一管理，可继续导入交通规划或行程定制。</p>
             </div>
             <button v-if="historyList.length" class="clear-btn" @click="emit('delete', -1)">
                 <i class="fa-solid fa-trash-can"></i>
-                <span>清空</span>
+                <span>清空全部</span>
             </button>
         </div>
 
         <div class="empty-module" v-if="!historyList.length">
             <div class="empty-icon"><i class="fa-solid fa-folder-open"></i></div>
             <h3>还没有保存的方案</h3>
-            <p>在 AI 咨询中生成满意的方案后，点击“保存方案”就会出现在这里。</p>
+            <p>在 AI 咨询或行程定制中保存方案后，会显示在这里。</p>
             <button class="empty-action" @click="emit('goToChat')">
                 <i class="fa-solid fa-message"></i>
                 <span>去咨询</span>
@@ -52,20 +108,29 @@ function displayRoute(item) {
             <article class="history-card" v-for="(item, index) in historyList" :key="item.id || index">
                 <div class="card-top">
                     <div class="route-icon"><i class="fa-solid fa-map-location-dot"></i></div>
-                    <button class="delete-btn" @click="emit('delete', index)" title="删除">
+                    <button class="delete-btn" @click="emit('delete', index)" title="删除方案">
                         <i class="fa-solid fa-xmark"></i>
                     </button>
                 </div>
 
-                <h3>{{ displayTitle(item) }}</h3>
-                <div class="route-line">{{ displayRoute(item) }}</div>
+                <h3>{{ planTitle(item) }}</h3>
+                <div class="route-line">{{ routeText(item) }}</div>
 
-                <p class="card-content">{{ item.content }}</p>
+                <p class="card-content">{{ summaryText(item) }}</p>
+
+                <div v-if="dayPlans(item).length" class="day-list">
+                    <div v-for="(day, dayIndex) in dayPlans(item)" :key="dayIndex" class="day-item">
+                        <strong>{{ dayTitle(day, dayIndex) }}</strong>
+                        <span>{{ dayDetail(day) }}</span>
+                    </div>
+                </div>
 
                 <div class="meta-row">
                     <span><i class="fa-regular fa-clock"></i> {{ formatTime(item.createTime || item.createdAt) || '刚刚' }}</span>
+                    <span><i class="fa-solid fa-tag"></i> {{ sourceName(item.sourceType) }}</span>
                     <span v-if="item.days"><i class="fa-regular fa-calendar"></i> {{ item.days }} 天</span>
                     <span v-if="item.budget"><i class="fa-solid fa-wallet"></i> {{ item.budget }}</span>
+                    <span v-if="suitableFor(item)"><i class="fa-solid fa-user-check"></i> {{ suitableFor(item) }}</span>
                 </div>
 
                 <div class="card-actions">
@@ -113,7 +178,8 @@ function displayRoute(item) {
 .history-header p,
 .empty-module p,
 .card-content,
-.meta-row {
+.meta-row,
+.day-item span {
     color: var(--text-secondary);
 }
 
@@ -240,11 +306,34 @@ function displayRoute(item) {
     font-size: 14px;
     line-height: 1.7;
     white-space: pre-wrap;
+}
+
+.day-list {
+    display: grid;
+    gap: 8px;
+    margin: 12px 0;
+}
+
+.day-item {
+    border: 1px solid var(--border-color);
+    background: var(--bg-color);
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.day-item strong {
+    display: block;
+    color: var(--text-main);
+    margin-bottom: 5px;
+}
+
+.day-item span {
     display: -webkit-box;
-    -webkit-line-clamp: 5;
+    -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    flex: 1;
+    font-size: 13px;
+    line-height: 1.6;
 }
 
 .meta-row {
@@ -259,6 +348,7 @@ function displayRoute(item) {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 10px;
+    margin-top: auto;
 }
 
 .card-actions button {

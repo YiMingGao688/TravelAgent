@@ -3,24 +3,24 @@ import { ref } from 'vue'
 
 defineProps({
     userName: { type: String, default: '' },
-    showSettings: { type: Boolean, default: false }
+    showSettings: { type: Boolean, default: false },
+    activeMenu: { type: String, default: 'ai' }
 })
 
-const emit = defineEmits(['selectMenu', 'toggleSettings', 'openProfile', 'toggleTheme', 'logout', 'sidebar-toggle', 'newChat'])
+const emit = defineEmits(['selectMenu', 'toggleSettings', 'openProfile', 'toggleTheme', 'logout', 'sidebar-toggle'])
 
 const menus = [
-    { id: 'ai', name: 'AI 咨询', icon: 'fa-wand-magic-sparkles' },
-    { id: 'transit', name: '交通规划', icon: 'fa-map-location-dot' },
+    { id: 'ai', name: '智能 AI 咨询', icon: 'fa-wand-magic-sparkles' },
+    { id: 'transit', name: '智能交通规划', icon: 'fa-map-location-dot' },
     { id: 'custom', name: '行程定制', icon: 'fa-route' },
-    { id: 'smart', name: '出行服务', icon: 'fa-clipboard-check' },
-    { id: 'history', name: '历史方案', icon: 'fa-clock-rotate-left' }
+    { id: 'smart', name: '一站式出行服务', icon: 'fa-clipboard-check' },
+    { id: 'history', name: '历史方案', icon: 'fa-clock-rotate-left' },
+    { id: 'reports', name: '历史出行服务报告', icon: 'fa-file-lines' }
 ]
 
-const activeMenu = ref('ai')
-const isCollapsed = ref(true)
+const isCollapsed = ref(false)
 
 function handleMenuClick(menuId) {
-    activeMenu.value = menuId
     emit('selectMenu', menuId)
 }
 
@@ -28,54 +28,53 @@ function toggleSidebar() {
     isCollapsed.value = !isCollapsed.value
     emit('sidebar-toggle', isCollapsed.value)
 }
-
-function handleNewChat() {
-    activeMenu.value = 'ai'
-    emit('selectMenu', 'ai')
-    emit('newChat')
-}
 </script>
 
 <template>
     <aside :class="['sidebar', { collapsed: isCollapsed }]">
-        <div class="logo-container">
+        <div class="logo-container" title="智能出行助手">
             <div class="logo-icon"><i class="fa-solid fa-plane-departure"></i></div>
-            <div v-show="!isCollapsed" class="logo-text">智能出行智能体</div>
+            <div class="logo-text">智能出行</div>
         </div>
 
-        <button class="new-chat-btn" v-show="!isCollapsed" @click="handleNewChat">
-            <i class="fa-solid fa-plus"></i>
-            <span>新对话</span>
-        </button>
-
-        <nav class="nav-menu">
+        <nav class="nav-menu" aria-label="主导航">
             <button
                 v-for="menu in menus"
                 :key="menu.id"
                 :class="['nav-item', { active: activeMenu === menu.id }]"
                 @click="handleMenuClick(menu.id)"
                 :title="menu.name"
+                type="button"
             >
-                <i :class="['fa-solid', menu.icon]"></i>
-                <span v-show="!isCollapsed">{{ menu.name }}</span>
+                <i :class="['fa-solid', menu.icon]" aria-hidden="true"></i>
+                <span>{{ menu.name }}</span>
             </button>
         </nav>
 
         <div class="user-container">
             <div class="settings-menu" v-if="showSettings && !isCollapsed">
-                <button @click="emit('openProfile')"><i class="fa-regular fa-id-card"></i> 出行偏好</button>
-                <button @click="emit('toggleTheme')"><i class="fa-solid fa-moon"></i> 切换主题</button>
-                <button @click="emit('logout')"><i class="fa-solid fa-right-from-bracket"></i> 退出登录</button>
+                <button type="button" @click="emit('openProfile')">
+                    <i class="fa-regular fa-id-card"></i>
+                    <span>出行偏好</span>
+                </button>
+                <button type="button" @click="emit('toggleTheme')">
+                    <i class="fa-solid fa-moon"></i>
+                    <span>切换主题</span>
+                </button>
+                <button type="button" @click="emit('logout')">
+                    <i class="fa-solid fa-right-from-bracket"></i>
+                    <span>退出登录</span>
+                </button>
             </div>
 
-            <button class="user-profile" @click.stop="emit('toggleSettings')" :title="userName">
+            <button class="user-profile" type="button" @click.stop="emit('toggleSettings')" :title="userName || '用户中心'">
                 <div class="user-avatar"><i class="fa-solid fa-user"></i></div>
-                <div v-show="!isCollapsed" class="user-info">{{ userName }}</div>
-                <i v-show="!isCollapsed" class="fa-solid fa-ellipsis"></i>
+                <div class="user-info">{{ userName || '出行用户' }}</div>
+                <i class="more fa-solid fa-ellipsis"></i>
             </button>
         </div>
 
-        <button class="collapse-btn" @click="toggleSidebar">
+        <button class="collapse-btn" type="button" @click="toggleSidebar" :title="isCollapsed ? '展开侧边栏' : '收起侧边栏'">
             <i :class="['fa-solid', isCollapsed ? 'fa-chevron-right' : 'fa-chevron-left']"></i>
         </button>
     </aside>
@@ -83,94 +82,135 @@ function handleNewChat() {
 
 <style scoped>
 .sidebar {
-    width: 260px;
+    width: 248px;
     height: 100vh;
-    background-color: var(--sidebar-bg);
+    background: var(--sidebar-bg);
     border-right: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
-    padding: 20px 0 16px;
-    z-index: 1000;
-    transition: width 0.3s ease;
+    padding: 14px 10px;
     position: relative;
-    flex-shrink: 0;
+    z-index: 1000;
+    flex: 0 0 248px;
+    transition: width 200ms ease, flex-basis 200ms ease, padding 200ms ease;
+    will-change: width, flex-basis;
 }
 
 .sidebar.collapsed {
-    width: 72px;
-}
-
-.logo-container {
-    padding: 0 20px 26px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.sidebar.collapsed .logo-container {
-    justify-content: center;
-}
-
-.logo-icon {
-    width: 36px;
-    height: 36px;
-    background: linear-gradient(135deg, #007aff, #00c6ff);
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    flex-shrink: 0;
-}
-
-.logo-text {
-    font-size: 18px;
-    font-weight: 700;
+    width: 68px;
+    flex-basis: 68px;
+    padding-inline: 8px;
 }
 
 button {
     font: inherit;
 }
 
-.new-chat-btn {
-    margin: 0 16px 18px;
-    padding: 12px 14px;
-    background: var(--primary-light);
-    border: 1px solid var(--primary-color);
-    border-radius: 8px;
+.logo-container {
+    height: 46px;
     display: flex;
     align-items: center;
     gap: 10px;
-    cursor: pointer;
-    color: var(--primary-color);
-    font-weight: 600;
+    padding: 0 8px;
+    margin-bottom: 10px;
+    overflow: hidden;
+}
+
+.sidebar.collapsed .logo-container {
+    justify-content: center;
+    padding: 0;
+}
+
+.logo-icon,
+.user-avatar {
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 36px;
+    color: #fff;
+}
+
+.logo-icon {
+    border-radius: 11px;
+    background: linear-gradient(135deg, #1d4ed8, #06b6d4);
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.22);
+}
+
+.logo-text {
+    font-size: 17px;
+    font-weight: 800;
+    white-space: nowrap;
+    color: var(--text-main);
 }
 
 .nav-menu {
     flex: 1;
-    padding: 0 12px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
 }
 
 .nav-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 14px;
-    border-radius: 8px;
-    border: none;
+    height: 42px;
+    width: 100%;
+    border: 0;
+    border-radius: 10px;
     background: transparent;
-    cursor: pointer;
     color: var(--text-secondary);
-    font-weight: 600;
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px;
+    cursor: pointer;
     text-align: left;
+    font-weight: 650;
+    overflow: hidden;
+    transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
 
 .sidebar.collapsed .nav-item {
-    justify-content: center;
-    padding: 12px;
+    grid-template-columns: 1fr;
+    place-items: center;
+    padding: 0;
+}
+
+.nav-item i {
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    font-size: 16px;
+    line-height: 1;
+}
+
+.nav-item span,
+.logo-text,
+.user-info,
+.more {
+    opacity: 1;
+    transform: translateX(0);
+    transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.sidebar.collapsed .nav-item span,
+.sidebar.collapsed .logo-text,
+.sidebar.collapsed .user-info,
+.sidebar.collapsed .more {
+    opacity: 0;
+    width: 0;
+    max-width: 0;
+    transform: translateX(-4px);
+    pointer-events: none;
+}
+
+.sidebar.collapsed .nav-item span,
+.sidebar.collapsed .logo-text,
+.sidebar.collapsed .user-info,
+.sidebar.collapsed .more {
+    display: none;
 }
 
 .nav-item:hover {
@@ -180,41 +220,38 @@ button {
 
 .nav-item.active {
     background: var(--primary-color);
-    color: white;
-}
-
-.nav-item i {
-    width: 20px;
-    text-align: center;
+    color: #fff;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
 }
 
 .user-container {
-    padding: 12px;
     position: relative;
+    padding-top: 10px;
 }
 
 .settings-menu {
     position: absolute;
     bottom: calc(100% + 8px);
-    left: 12px;
-    right: 12px;
+    left: 0;
+    right: 0;
     background: var(--card-bg);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: 10px;
     box-shadow: var(--shadow-md);
     padding: 8px;
 }
 
 .settings-menu button {
     width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 10px;
-    border: none;
+    height: 36px;
+    border: 0;
+    border-radius: 8px;
     background: transparent;
     color: var(--text-main);
-    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 10px;
     cursor: pointer;
     text-align: left;
 }
@@ -226,19 +263,24 @@ button {
 
 .user-profile {
     width: 100%;
-    border: none;
+    height: 44px;
+    border: 0;
+    border-radius: 10px;
     background: transparent;
     color: var(--text-main);
-    display: flex;
+    display: grid;
+    grid-template-columns: 36px 1fr 20px;
     align-items: center;
-    gap: 10px;
-    padding: 10px;
-    border-radius: 8px;
+    gap: 8px;
+    padding: 0 8px;
     cursor: pointer;
+    overflow: hidden;
 }
 
 .sidebar.collapsed .user-profile {
-    justify-content: center;
+    grid-template-columns: 1fr;
+    place-items: center;
+    padding: 0;
 }
 
 .user-profile:hover {
@@ -246,19 +288,13 @@ button {
 }
 
 .user-avatar {
-    width: 32px;
-    height: 32px;
     border-radius: 50%;
     background: var(--primary-color);
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+    font-size: 14px;
 }
 
 .user-info {
-    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -272,14 +308,39 @@ button {
     transform: translateY(-50%);
     width: 24px;
     height: 48px;
-    background: var(--sidebar-bg);
     border: 1px solid var(--border-color);
-    border-left: none;
+    border-left: 0;
     border-radius: 0 12px 12px 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
+    background: var(--sidebar-bg);
     color: var(--text-secondary);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    box-shadow: 6px 0 12px rgba(15, 23, 42, 0.04);
+}
+
+.collapse-btn:hover {
+    color: var(--primary-color);
+}
+
+@media (max-width: 760px) {
+    .sidebar {
+        width: 68px;
+        flex-basis: 68px;
+        padding-inline: 8px;
+    }
+
+    .sidebar .logo-container,
+    .sidebar .nav-item,
+    .sidebar .user-profile {
+        justify-content: center;
+    }
+
+    .sidebar .logo-text,
+    .sidebar .nav-item span,
+    .sidebar .user-info,
+    .sidebar .more {
+        display: none;
+    }
 }
 </style>

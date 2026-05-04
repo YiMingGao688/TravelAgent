@@ -1,5 +1,5 @@
 import { ref, nextTick } from 'vue'
-import { streamChat, parseSSEEvent, getChatHistory } from '../utils/api.js'
+import { streamChat, parseSSEEvent, getChatHistory, getTripContext } from '../utils/api.js'
 import { getCurrentTime } from '../utils/time.js'
 
 const welcomeMessage = () => ({
@@ -14,6 +14,7 @@ export function useChat(aiChatRef) {
     const aiThinking = ref(false)
     const aiTyping = ref(false)
     const sessionId = ref('')
+    const currentTripContext = ref(null)
     let cancelTyping = null
     let stopped = false
 
@@ -53,6 +54,8 @@ export function useChat(aiChatRef) {
                     isPlan: looksLikePlan(record.aiResponse)
                 }
             ]))
+            await loadCurrentTripContext()
+            attachContextToLatestAi()
         } catch (error) {
             console.error('加载聊天历史失败:', error)
             messages.value = [welcomeMessage()]
@@ -63,6 +66,7 @@ export function useChat(aiChatRef) {
         const newId = crypto.randomUUID()
         sessionId.value = newId
         sessionStorage.setItem('chatSessionId', newId)
+        currentTripContext.value = null
         messages.value = [welcomeMessage()]
     }
 
@@ -73,6 +77,7 @@ export function useChat(aiChatRef) {
         cancelTyping = null
         let index = -1
         let current = ''
+        let pendingTripContext = null
         const userId = sessionStorage.getItem('loginUser')
         const controller = new AbortController()
 
@@ -115,6 +120,21 @@ export function useChat(aiChatRef) {
                         break
                     }
 
+                    if (eventType === 'context' && eventData) {
+                        try {
+                            pendingTripContext = JSON.parse(eventData)
+                            currentTripContext.value = pendingTripContext
+                            console.log('后端返回 tripContext = ', pendingTripContext)
+                            if (index !== -1) {
+                                messages.value[index].tripContext = pendingTripContext
+                                messages.value[index].structuredPlan = toStructuredPlan(pendingTripContext, userMsg.content)
+                            }
+                        } catch (error) {
+                            console.warn('解析 tripContext 失败:', error)
+                        }
+                        continue
+                    }
+
                     if (eventData && !stopped) {
                         if (index === -1) {
                             index = messages.value.length
@@ -124,6 +144,8 @@ export function useChat(aiChatRef) {
                                 time: getCurrentTime(),
                                 sessionId: sessionId.value,
                                 rawQuestion: userMsg.content,
+                                tripContext: pendingTripContext,
+                                structuredPlan: pendingTripContext ? toStructuredPlan(pendingTripContext, userMsg.content) : null,
                                 isPlan: false
                             })
                         }
@@ -131,6 +153,10 @@ export function useChat(aiChatRef) {
                             current += value
                             messages.value[index].content = current
                             messages.value[index].isPlan = looksLikePlan(current)
+                            if (currentTripContext.value) {
+                                messages.value[index].tripContext = currentTripContext.value
+                                messages.value[index].structuredPlan = toStructuredPlan(currentTripContext.value, userMsg.content)
+                            }
                         })
                     }
                 }
@@ -195,6 +221,59 @@ export function useChat(aiChatRef) {
         loadHistory()
     }
 
+    async function loadCurrentTripContext() {
+        if (!sessionId.value) return null
+        currentTripContext.value = await getTripContext(sessionId.value)
+        return currentTripContext.value
+    }
+
+    function attachContextToLatestAi() {
+        if (!currentTripContext.value) return
+        const latestAi = [...messages.value].reverse().find(item => item.role === 'ai' && !item.isWelcome)
+        if (!latestAi) return
+        latestAi.tripContext = currentTripContext.value
+        latestAi.structuredPlan = toStructuredPlan(currentTripContext.value, latestAi.rawQuestion)
+        console.log('当前展示 identifiedTravelInfo = ', latestAi.structuredPlan)
+    }
+
+    function syncTripContextFromProfile(savedProfile = {}, previousProfile = {}) {
+        const next = { ...(currentTripContext.value || {}) }
+        const oldCity = previousProfile.city || ''
+        if (!next.startPlace || next.startPlace === oldCity) {
+            next.startPlace = savedProfile.city || next.startPlace || ''
+        }
+        if (!next.transportMode || next.transportMode === previousProfile.transport) {
+            next.transportMode = savedProfile.transport || next.transportMode || ''
+        }
+        if (!next.preference || next.preference === previousProfile.style) {
+            next.preference = savedProfile.style || next.preference || ''
+        }
+        currentTripContext.value = next
+        attachContextToLatestAi()
+        console.log('当前展示 identifiedTravelInfo = ', toStructuredPlan(next))
+    }
+
+    function toStructuredPlan(context, rawQuestion = '') {
+        if (!context) return null
+        return {
+            startPlace: context.startPlace || '',
+            endPlace: context.endPlace || '',
+            scenario: context.sceneType || '',
+            days: context.days || null,
+            preference: context.preference || '',
+            budget: context.budget || '',
+            companions: context.companionType || '',
+            transportMode: context.transportMode || '',
+            pacePreference: context.pacePreference || '',
+            walkingPreference: context.walkingPreference || '',
+            hotelPreference: context.hotelPreference || '',
+            foodPreference: context.foodPreference || '',
+            specialNeeds: context.specialNeeds || '',
+            rawQuestion,
+            hasUsefulFields: Boolean(context.startPlace || context.endPlace || context.days || context.budget || context.preference || context.companionType || context.sceneType)
+        }
+    }
+
     function formatTime(value) {
         if (!value) return getCurrentTime()
         return String(value).replace('T', ' ').slice(0, 16)
@@ -205,6 +284,9 @@ export function useChat(aiChatRef) {
         aiThinking,
         aiTyping,
         sessionId,
+        currentTripContext,
+        syncTripContextFromProfile,
+        loadCurrentTripContext,
         sendMessage,
         interrupt,
         startNewChat,

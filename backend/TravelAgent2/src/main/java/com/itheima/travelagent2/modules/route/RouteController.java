@@ -52,7 +52,11 @@ public class RouteController {
 
     @DeleteMapping("/{id}")
     public Result<String> delete(@PathVariable Long id) {
-        routeService.deleteById(id);
+        System.out.println("后端收到删除 id = " + id);
+        boolean removed = routeService.deleteById(id);
+        if (!removed) {
+            return Result.error("删除失败，数据库中不存在 id = " + id + " 的路线记录");
+        }
         return Result.success("Deleted");
     }
 }
