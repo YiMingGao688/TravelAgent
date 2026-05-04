@@ -13,5 +13,5 @@ public interface RouteService {
 
     List<Route> listAll();
 
-    void deleteById(Long id);
+    boolean deleteById(Long id);
 }

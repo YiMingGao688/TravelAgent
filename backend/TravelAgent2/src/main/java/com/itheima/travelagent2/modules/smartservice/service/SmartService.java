@@ -11,9 +11,15 @@ public interface SmartService {
 
     SmartServiceRecord generateReport(TravelReportRequestDTO dto);
 
+    SmartServiceRecord create(SmartServiceRecord record);
+
+    SmartServiceRecord update(Long id, SmartServiceRecord record);
+
+    SmartServiceRecord getById(Long id);
+
     List<SmartServiceRecord> listByUserId(String userId);
 
     List<SmartServiceRecord> listAll();
 
-    void deleteById(Long id);
+    boolean deleteById(Long id);
 }

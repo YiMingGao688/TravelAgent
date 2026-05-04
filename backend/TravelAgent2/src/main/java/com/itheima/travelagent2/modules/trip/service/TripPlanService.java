@@ -8,11 +8,13 @@ import java.util.List;
 public interface TripPlanService {
     TripPlan savePlan(TripPlanSaveDTO dto);
 
+    TripPlan updatePlan(Long id, TripPlanSaveDTO dto);
+
     List<TripPlan> listByUserId(String userId);
 
     List<TripPlan> listAll();
 
     TripPlan getById(Long id);
 
-    void deleteById(Long id);
+    boolean deleteById(Long id);
 }

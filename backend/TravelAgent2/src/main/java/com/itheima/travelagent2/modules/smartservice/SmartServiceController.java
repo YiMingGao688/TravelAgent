@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -60,9 +61,36 @@ public class SmartServiceController {
         return Result.success(smartService.listByUserId(userId));
     }
 
+    @GetMapping("/{id}")
+    public Result<SmartServiceRecord> detail(@PathVariable Long id) {
+        SmartServiceRecord record = smartService.getById(id);
+        if (record == null) {
+            return Result.error(404, "Service record not found");
+        }
+        return Result.success(record);
+    }
+
+    @PostMapping
+    public Result<SmartServiceRecord> create(@RequestBody SmartServiceRecord record) {
+        return Result.success("Created", smartService.create(record));
+    }
+
+    @PutMapping("/{id}")
+    public Result<SmartServiceRecord> update(@PathVariable Long id, @RequestBody SmartServiceRecord record) {
+        SmartServiceRecord updated = smartService.update(id, record);
+        if (updated == null) {
+            return Result.error(404, "Service record not found");
+        }
+        return Result.success("Updated", updated);
+    }
+
     @DeleteMapping("/{id}")
     public Result<String> delete(@PathVariable Long id) {
-        smartService.deleteById(id);
+        System.out.println("后端收到删除 id = " + id);
+        boolean removed = smartService.deleteById(id);
+        if (!removed) {
+            return Result.error("删除失败，数据库中不存在 id = " + id + " 的服务记录");
+        }
         return Result.success("Deleted");
     }
 }

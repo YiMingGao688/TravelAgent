@@ -121,8 +121,8 @@ public class RouteServiceImpl extends ServiceImpl<RouteMapper, Route> implements
     }
 
     @Override
-    public void deleteById(Long id) {
-        this.removeById(id);
+    public boolean deleteById(Long id) {
+        return this.removeById(id);
     }
 
     private LocationInfo geocode(String address) {

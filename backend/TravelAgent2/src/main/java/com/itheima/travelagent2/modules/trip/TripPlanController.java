@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -36,6 +37,11 @@ public class TripPlanController {
         return Result.success("Saved", tripPlanService.savePlan(dto));
     }
 
+    @PostMapping
+    public Result<TripPlan> create(@RequestBody TripPlanSaveDTO dto) {
+        return savePlan(dto);
+    }
+
     @GetMapping("/list")
     public Result<List<TripPlan>> listByUserId(@RequestParam String userId) {
         if (userId == null || userId.isBlank()) {
@@ -53,9 +59,22 @@ public class TripPlanController {
         return Result.success(plan);
     }
 
+    @PutMapping("/{id}")
+    public Result<TripPlan> update(@PathVariable Long id, @RequestBody TripPlanSaveDTO dto) {
+        TripPlan plan = tripPlanService.updatePlan(id, dto);
+        if (plan == null) {
+            return Result.error(404, "Plan not found");
+        }
+        return Result.success("Updated", plan);
+    }
+
     @DeleteMapping("/{id}")
     public Result<String> delete(@PathVariable Long id) {
-        tripPlanService.deleteById(id);
+        System.out.println("后端收到删除 id = " + id);
+        boolean removed = tripPlanService.deleteById(id);
+        if (!removed) {
+            return Result.error("删除失败，数据库中不存在 id = " + id + " 的历史方案");
+        }
         return Result.success("Deleted");
     }
 }
