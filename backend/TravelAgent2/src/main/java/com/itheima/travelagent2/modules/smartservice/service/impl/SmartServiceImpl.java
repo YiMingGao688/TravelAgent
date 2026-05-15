@@ -56,7 +56,7 @@ public class SmartServiceImpl implements SmartService {
 
                 请生成一份面向旅客的服务方案，按“行前、行中、行后”三段输出。
                 每段至少 2 个节点。每个节点用以下格式：
-                【行前】节点标题｜状态：待处理/已完成/风险提醒｜说明：一句可执行建议
+                【行前】节点标题｜状态：待执行/已完成/风险提醒｜说明：一句可执行建议
                 """.formatted(
                 serviceName,
                 value(dto.getUserId()),

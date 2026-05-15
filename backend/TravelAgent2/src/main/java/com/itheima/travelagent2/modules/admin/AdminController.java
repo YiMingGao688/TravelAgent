@@ -21,6 +21,7 @@ import com.itheima.travelagent2.modules.user.entity.UserProfile;
 import com.itheima.travelagent2.modules.user.mapper.UserMapper;
 import com.itheima.travelagent2.modules.user.mapper.UserProfileMapper;
 import com.itheima.travelagent2.modules.user.service.UserService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -56,6 +57,12 @@ public class AdminController {
     private final TripPlanMapper tripPlanMapper;
     private final RouteMapper routeMapper;
     private final SmartServiceRecordMapper smartServiceRecordMapper;
+
+    @Value("${spring.ai.zhipu.api-key:}")
+    private String zhipuApiKey;
+
+    @Value("${amap.key:${integration.amap-key:}}")
+    private String amapKey;
 
     public AdminController(UserService userService,
                            TripPlanService tripPlanService,
@@ -121,7 +128,24 @@ public class AdminController {
         data.put("serviceTypeDistribution", distribution(services, SmartServiceRecord::getServiceType, "其他服务"));
         data.put("popularStartPlaces", topPlaces(routes, Route::getStartPoint));
         data.put("popularEndPlaces", topPlaces(routes, Route::getEndPoint));
+        data.put("systemStatus", buildSystemStatus());
         return Result.success(data);
+    }
+
+    private Map<String, Object> buildSystemStatus() {
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("database", "正常");
+        status.put("ai", isConfigured(zhipuApiKey) ? "正常" : "未配置");
+        status.put("amap", isConfigured(amapKey) ? "正常" : "未配置");
+        status.put("apiCallsToday", "待接入");
+        return status;
+    }
+
+    private boolean isConfigured(String value) {
+        return value != null
+                && !value.isBlank()
+                && !value.contains("placeholder")
+                && !value.contains("please-fill");
     }
 
     @GetMapping("/users")

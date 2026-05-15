@@ -29,7 +29,7 @@ const statusMessage = ref('')
 const form = ref(defaultForm())
 
 const activeService = computed(() => services.find(item => item.id === activeType.value))
-const latestRecord = computed(() => records.value[0])
+const latestRecord = computed(() => records.value.find(item => item.serviceType !== 'TRAVEL_REPORT'))
 const latestTimeline = computed(() => parseTimeline(latestRecord.value?.responsePayload))
 const reportSections = computed(() => parseReport(reportRecord.value?.responsePayload))
 
@@ -108,6 +108,7 @@ async function generate() {
 }
 
 async function generateReport() {
+    if (reportLoading.value) return
     reportLoading.value = true
     statusMessage.value = '正在生成出行服务报告...'
     try {
@@ -133,7 +134,7 @@ async function generateReport() {
         reportRecord.value = result.data
         reportSaved.value = false
         await loadRecords()
-        statusMessage.value = '出行服务报告已生成，可点击保存报告'
+        statusMessage.value = '出行服务报告已生成，请确认后保存'
     } catch (error) {
         statusMessage.value = `报告生成失败：${error.message}`
     } finally {
@@ -198,9 +199,9 @@ function weatherSummary() {
 function parseTimeline(text = '') {
     if (!text) return []
     const fallback = [
-        { stage: '行前', title: '确认出行准备', status: '待处理', desc: '核对出发时间、证件、行李和到站方式。' },
+        { stage: '行前', title: '确认出行准备', status: '待执行', desc: '核对出发时间、证件、行李和到站方式。' },
         { stage: '行中', title: '途中动态关注', status: '风险提醒', desc: '关注天气、换乘、拥堵和晚点变化。' },
-        { stage: '行后', title: '到达后服务', status: '待处理', desc: '确认接驳、发票、售后和行李取送需求。' }
+        { stage: '行后', title: '到达后服务', status: '待执行', desc: '确认接驳、发票、售后和行李取送需求。' }
     ]
     const lines = String(text).split(/\n+/).map(item => item.trim()).filter(Boolean)
     const parsed = lines.map(line => {
@@ -214,7 +215,7 @@ function parseTimeline(text = '') {
         return {
             stage,
             title,
-            status: statusPart.replace(/^状态[:：]/, '') || inferStatus(line),
+            status: normalizeNodeStatus(statusPart.replace(/^状态[:：]/, '') || inferStatus(line)),
             desc: descPart.replace(/^说明[:：]/, '') || line
         }
     }).filter(Boolean)
@@ -235,7 +236,12 @@ function parseReport(text = '') {
 function inferStatus(text) {
     if (/风险|延误|拥堵|天气|提醒/.test(text)) return '风险提醒'
     if (/完成|已/.test(text)) return '已完成'
-    return '待处理'
+    return '待执行'
+}
+
+function normalizeNodeStatus(status) {
+    if (status === '待处理') return '待执行'
+    return status || '待执行'
 }
 
 function statusClass(status) {
@@ -257,7 +263,7 @@ function recordStatusText(status) {
         SAVED: '已保存',
         GENERATED: '已生成',
         COMPLETED: '已完成',
-        PENDING: '待处理',
+        PENDING: '待执行',
         FAILED: '生成失败'
     }
     return statusMap[status] || status || '已保存'
@@ -394,7 +400,7 @@ onMounted(loadRecords)
                 <article v-if="reportRecord" class="report-card">
                     <div class="record-head">
                         <strong>{{ reportRecord.title }}</strong>
-                        <span>已保存</span>
+                        <span>{{ reportSaved ? '已保存到历史报告' : '待保存' }}</span>
                     </div>
                     <section v-for="section in reportSections" :key="section.title">
                         <h3>{{ section.title }}</h3>

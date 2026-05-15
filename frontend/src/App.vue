@@ -1,26 +1,81 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import LoginPage from './components/login/LoginPage.vue'
+import LandingPage from './components/landing/LandingPage.vue'
+import LoginModal from './components/login/LoginModal.vue'
 import ChatPage from './components/chat/ChatPage.vue'
 import AdminPage from './components/admin/AdminPage.vue'
 
 const isLoggedIn = ref(false)
 const isAdmin = ref(false)
+const showWorkspace = ref(false)
+const showLoginModal = ref(false)
+const loginTip = ref('登录后可继续使用 AI 出行规划服务。')
+const loginUser = ref('')
 
 onMounted(() => {
-  isAdmin.value = window.location.hash.startsWith('#/admin')
+  syncPageFromHash()
   window.addEventListener('hashchange', () => {
-    isAdmin.value = window.location.hash.startsWith('#/admin')
+    syncPageFromHash()
   })
-  isLoggedIn.value = !!sessionStorage.getItem('loginUser')
+  loginUser.value = sessionStorage.getItem('loginUser') || ''
+  isLoggedIn.value = !!loginUser.value
 })
+
+function syncPageFromHash() {
+  const hash = window.location.hash || '#/'
+  isAdmin.value = hash.startsWith('#/admin')
+  showWorkspace.value = hash.startsWith('#/app')
+}
+
+function startUse() {
+  window.location.hash = '#/app'
+  showWorkspace.value = true
+}
+
+function returnHome() {
+  window.location.hash = '#/'
+  showWorkspace.value = false
+}
+
+function requestLogin(message) {
+  loginTip.value = message || '登录后可继续使用 AI 出行规划服务。'
+  showLoginModal.value = true
+}
+
+function handleLoginSuccess(userInfo) {
+  const account = userInfo?.account || 'travel-user'
+  sessionStorage.setItem('loginUser', account)
+  loginUser.value = account
+  isLoggedIn.value = true
+  showLoginModal.value = false
+}
+
+function handleLogout() {
+  sessionStorage.removeItem('loginUser')
+  sessionStorage.removeItem('chatSessionId')
+  loginUser.value = ''
+  isLoggedIn.value = false
+}
 </script>
 
 <template>
   <div class="app-wrapper">
     <AdminPage v-if="isAdmin" />
-    <LoginPage v-else-if="!isLoggedIn" @login-success="isLoggedIn = true" />
-    <ChatPage v-else @logout="isLoggedIn = false" />
+    <LandingPage v-else-if="!showWorkspace" @start="startUse" />
+    <ChatPage
+      v-else
+      :is-logged-in="isLoggedIn"
+      :login-user="loginUser"
+      @logout="handleLogout"
+      @require-login="requestLogin"
+      @go-home="returnHome"
+    />
+    <LoginModal
+      v-if="showLoginModal"
+      :message="loginTip"
+      @close="showLoginModal = false"
+      @login-success="handleLoginSuccess"
+    />
   </div>
 </template>
 

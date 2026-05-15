@@ -144,8 +144,18 @@ defineExpose({ scrollToBottom, chatRef })
             <div v-if="props.aiThinking" class="message-row ai">
                 <div class="avatar"><span class="emoji-avatar">AI</span></div>
                 <div class="message-content">
-                    <div class="bubble">
-                        <div class="typing-indicator"><span></span><span></span><span></span></div>
+                    <div class="bubble thinking-bubble">
+                        <div class="thinking-head">
+                            <div class="thinking-orbit">
+                                <span></span><span></span><span></span>
+                            </div>
+                            <strong>正在理解您的出行需求</strong>
+                        </div>
+                        <div class="thinking-steps">
+                            <span>识别起点终点</span>
+                            <span>结合偏好与预算</span>
+                            <span>整理可执行方案</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -366,6 +376,59 @@ defineExpose({ scrollToBottom, chatRef })
 
 .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
 .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+.thinking-bubble {
+    min-width: min(420px, 72vw);
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(14, 165, 233, 0.08)), var(--card-bg);
+}
+
+.thinking-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-main);
+}
+
+.thinking-head strong {
+    font-size: 15px;
+}
+
+.thinking-orbit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: rgba(37, 99, 235, 0.12);
+}
+
+.thinking-orbit span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    animation: bounce 1.2s infinite ease-in-out;
+}
+
+.thinking-orbit span:nth-child(2) { animation-delay: 0.16s; }
+.thinking-orbit span:nth-child(3) { animation-delay: 0.32s; }
+
+.thinking-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.thinking-steps span {
+    padding: 5px 9px;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.08);
+    color: var(--text-secondary);
+    font-size: 12px;
+}
 
 .upload-indicator {
     display: flex;

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AIChat from './AIChat.vue'
 import TransitModule from './TransitModule.vue'
 import CustomModule from './CustomModule.vue'
@@ -12,11 +12,16 @@ import { useChat, useProfile, useTheme } from '../../composables/index.js'
 import { getCurrentTime } from '../../utils/time'
 import { deleteTripPlan, listTripPlans, saveTripPlan } from '../../utils/api.js'
 
-const emit = defineEmits(['logout'])
+const props = defineProps({
+    isLoggedIn: { type: Boolean, default: false },
+    loginUser: { type: String, default: '' }
+})
+
+const emit = defineEmits(['logout', 'require-login', 'go-home'])
 
 const activeMenu = ref('ai')
 const showSettings = ref(false)
-const userName = ref(sessionStorage.getItem('loginUser'))
+const userName = ref(props.loginUser || sessionStorage.getItem('loginUser') || '')
 const showProfileModal = ref(false)
 const sidebarCollapsed = ref(true)
 const route = ref({ from: '', to: '', preference: '', tripPlanId: null, importSource: '' })
@@ -31,6 +36,14 @@ const imageUploading = ref(false)
 const { messages, aiThinking, aiTyping, sessionId, currentTripContext, syncTripContextFromProfile, sendMessage, interrupt, startNewChat, init } = useChat(aiChatRef)
 const { profile, loadProfile, saveProfile } = useProfile()
 const { initTheme, toggleTheme } = useTheme()
+
+watch(() => props.loginUser, value => {
+    userName.value = value || ''
+    if (value) {
+        loadProfile(value)
+        loadTripPlans()
+    }
+})
 
 const currentMenuName = computed(() => ({
     ai: '智能 AI 咨询',
@@ -53,6 +66,9 @@ const displayMessages = computed(() => messages.value.map(msg => {
 }))
 
 async function switchMenu(id) {
+    if (['history', 'reports'].includes(id) && !requireLogin('查看历史记录需要先登录。')) {
+        return
+    }
     if (activeMenu.value === 'transit' && transitRef.value) {
         transitRef.value.destroyMap()
     }
@@ -67,6 +83,9 @@ async function switchMenu(id) {
 }
 
 async function handleSendMessage(userMsg) {
+    if (!requireLogin('登录后可继续使用 AI 出行规划服务。')) {
+        return
+    }
     if (!userMsg.hasImage) {
         sendMessage(userMsg, profile.value)
         return
@@ -96,7 +115,23 @@ async function handleSendMessage(userMsg) {
 function handleLogout() {
     sessionStorage.removeItem('loginUser')
     sessionStorage.removeItem('chatSessionId')
+    userName.value = ''
     emit('logout')
+}
+
+function openProfile() {
+    if (!requireLogin('登录后可以保存和同步您的出行偏好。')) {
+        return
+    }
+    showProfileModal.value = true
+}
+
+function requireLogin(message) {
+    if (props.isLoggedIn || sessionStorage.getItem('loginUser')) {
+        return true
+    }
+    emit('require-login', message)
+    return false
 }
 
 async function handleProfileSave(savedProfile) {
@@ -115,6 +150,9 @@ async function handleProfileSave(savedProfile) {
 }
 
 async function handleSavePlan(msg) {
+    if (!requireLogin('登录后可保存出行方案，并在历史方案中继续查看。')) {
+        return
+    }
     const structured = buildPlanPayload(msg)
     try {
         const result = await saveTripPlan(structured)
@@ -534,7 +572,7 @@ onBeforeUnmount(() => {
             :active-menu="activeMenu"
             @select-menu="switchMenu"
             @toggle-settings="showSettings = !showSettings"
-            @open-profile="showProfileModal = true"
+            @open-profile="openProfile"
             @toggle-theme="toggleTheme"
             @logout="handleLogout"
             @sidebar-toggle="sidebarCollapsed = $event"
@@ -543,9 +581,15 @@ onBeforeUnmount(() => {
         <main class="main-layout">
             <header class="page-header" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
                 <div class="header-title">{{ currentMenuName }}</div>
-                <div class="status-badge">
-                    <i class="fa-solid fa-circle"></i>
-                    <span>{{ activeMenu === 'smart' ? '出行服务已准备' : 'AI 出行助手在线' }}</span>
+                <div class="header-actions">
+                    <button class="home-link" type="button" @click="emit('go-home')">
+                        <i class="fa-solid fa-house"></i>
+                        <span>首页介绍</span>
+                    </button>
+                    <div class="status-badge">
+                        <i class="fa-solid fa-circle"></i>
+                        <span>{{ activeMenu === 'smart' ? '出行服务已准备' : 'AI 出行助手在线' }}</span>
+                    </div>
                 </div>
             </header>
 
@@ -651,6 +695,30 @@ onBeforeUnmount(() => {
     font-size: 20px;
     font-weight: 600;
     color: var(--text-main);
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.home-link {
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.home-link:hover {
+    color: var(--primary-color);
+    border-color: var(--primary-color);
 }
 
 .status-badge {
