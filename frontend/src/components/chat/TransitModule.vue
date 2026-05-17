@@ -573,7 +573,7 @@ onBeforeUnmount(destroyMap)
                     </article>
                 </section>
 
-                <section class="panel-card risk-card" :class="risk.level.toLowerCase()">
+                <section v-if="activeRoute" class="panel-card risk-card" :class="risk.level.toLowerCase()">
                     <div class="section-title"><i class="fa-solid fa-triangle-exclamation"></i><span>风险预警</span></div>
                     <div class="risk-level">{{ risk.label }} <small>{{ risk.level }}</small></div>
                     <p v-for="item in risk.reasons" :key="item">{{ item }}</p>

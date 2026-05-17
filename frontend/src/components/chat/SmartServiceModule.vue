@@ -6,8 +6,11 @@ const props = defineProps({
     profile: { type: Object, default: () => ({}) },
     routeData: { type: Object, default: () => ({}) },
     routePlan: { type: Object, default: null },
-    serviceContext: { type: Object, default: () => ({}) }
+    serviceContext: { type: Object, default: () => ({}) },
+    isLoggedIn: { type: Boolean, default: false }
 })
+
+const emit = defineEmits(['require-login'])
 
 const services = [
     { id: 'REALTIME_ALERT', name: '实时提醒', icon: 'fa-bell', desc: '天气、拥堵、晚点、换乘风险提醒' },
@@ -86,6 +89,7 @@ function buildImportedRequirement(value) {
 }
 
 async function generate() {
+    if (!requireLogin('登录后可生成并保存一站式出行服务方案。')) return
     loading.value = true
     statusMessage.value = '正在生成服务方案...'
     try {
@@ -108,6 +112,7 @@ async function generate() {
 }
 
 async function generateReport() {
+    if (!requireLogin('登录后可生成出行服务报告。')) return
     if (reportLoading.value) return
     reportLoading.value = true
     statusMessage.value = '正在生成出行服务报告...'
@@ -143,6 +148,7 @@ async function generateReport() {
 }
 
 async function saveReport() {
+    if (!requireLogin('登录后可保存报告，并在历史出行服务报告中查看。')) return
     if (!reportRecord.value?.responsePayload) {
         statusMessage.value = '请先生成报告'
         return
@@ -164,6 +170,14 @@ async function saveReport() {
     } catch (error) {
         statusMessage.value = `保存报告失败：${error.message}`
     }
+}
+
+function requireLogin(message) {
+    if (props.isLoggedIn || sessionStorage.getItem('loginUser')) {
+        return true
+    }
+    emit('require-login', message)
+    return false
 }
 
 async function loadRecords() {

@@ -7,7 +7,7 @@ import AdminPage from './components/admin/AdminPage.vue'
 
 const isLoggedIn = ref(false)
 const isAdmin = ref(false)
-const showWorkspace = ref(false)
+const showLanding = ref(true)
 const showLoginModal = ref(false)
 const loginTip = ref('登录后可继续使用 AI 出行规划服务。')
 const loginUser = ref('')
@@ -24,17 +24,17 @@ onMounted(() => {
 function syncPageFromHash() {
   const hash = window.location.hash || '#/'
   isAdmin.value = hash.startsWith('#/admin')
-  showWorkspace.value = hash.startsWith('#/app')
+  showLanding.value = !hash.startsWith('#/app')
 }
 
 function startUse() {
   window.location.hash = '#/app'
-  showWorkspace.value = true
+  showLanding.value = false
 }
 
 function returnHome() {
   window.location.hash = '#/'
-  showWorkspace.value = false
+  showLanding.value = true
 }
 
 function requestLogin(message) {
@@ -53,15 +53,18 @@ function handleLoginSuccess(userInfo) {
 function handleLogout() {
   sessionStorage.removeItem('loginUser')
   sessionStorage.removeItem('chatSessionId')
+  localStorage.removeItem('loginUser')
+  localStorage.removeItem('token')
   loginUser.value = ''
   isLoggedIn.value = false
+  showLoginModal.value = false
 }
 </script>
 
 <template>
   <div class="app-wrapper">
     <AdminPage v-if="isAdmin" />
-    <LandingPage v-else-if="!showWorkspace" @start="startUse" />
+    <LandingPage v-else-if="showLanding" @start="startUse" />
     <ChatPage
       v-else
       :is-logged-in="isLoggedIn"

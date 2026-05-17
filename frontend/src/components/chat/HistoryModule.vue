@@ -84,8 +84,6 @@ function sourceName(value) {
     <div class="history-container">
         <div class="history-header">
             <div>
-                <span class="eyebrow">Saved Plans</span>
-                <h2>历史方案</h2>
                 <p>已保存的出行方案会在这里统一管理，可继续导入交通规划或行程定制。</p>
             </div>
             <button v-if="historyList.length" class="clear-btn" @click="emit('delete', -1)">
@@ -151,7 +149,7 @@ function sourceName(value) {
 <style scoped>
 .history-container {
     flex: 1;
-    padding: 56px 32px 40px;
+    padding: 18px 32px 40px;
     overflow-y: auto;
 }
 
@@ -160,19 +158,7 @@ function sourceName(value) {
     justify-content: space-between;
     gap: 20px;
     align-items: flex-end;
-    margin-bottom: 24px;
-}
-
-.eyebrow {
-    color: var(--primary-color);
-    font-size: 12px;
-    font-weight: 700;
-}
-
-.history-header h2 {
-    margin: 6px 0;
-    color: var(--text-main);
-    font-size: 26px;
+    margin-bottom: 10px;
 }
 
 .history-header p,
@@ -181,6 +167,12 @@ function sourceName(value) {
 .meta-row,
 .day-item span {
     color: var(--text-secondary);
+}
+
+.history-header p {
+    margin: 0;
+    max-width: 680px;
+    line-height: 1.6;
 }
 
 .clear-btn,

@@ -115,7 +115,14 @@ async function handleSendMessage(userMsg) {
 function handleLogout() {
     sessionStorage.removeItem('loginUser')
     sessionStorage.removeItem('chatSessionId')
+    localStorage.removeItem('loginUser')
+    localStorage.removeItem('token')
     userName.value = ''
+    showSettings.value = false
+    showProfileModal.value = false
+    historyList.value = []
+    smartContext.value = {}
+    routePlan.value = null
     emit('logout')
 }
 
@@ -574,6 +581,7 @@ onBeforeUnmount(() => {
             @toggle-settings="showSettings = !showSettings"
             @open-profile="openProfile"
             @toggle-theme="toggleTheme"
+            @login-account="emit('require-login', '登录后可同步您的出行偏好、历史方案和服务报告。')"
             @logout="handleLogout"
             @sidebar-toggle="sidebarCollapsed = $event"
         />
@@ -635,6 +643,8 @@ onBeforeUnmount(() => {
                         :route-data="route"
                         :route-plan="routePlan"
                         :service-context="smartContext"
+                        :is-logged-in="props.isLoggedIn"
+                        @require-login="emit('require-login', $event)"
                     />
                 </div>
 

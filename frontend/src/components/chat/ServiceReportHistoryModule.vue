@@ -73,8 +73,6 @@ onBeforeUnmount(() => {
     <div class="report-page">
         <header class="report-header">
             <div>
-                <span class="eyebrow">Service Reports</span>
-                <h2>历史出行服务报告</h2>
                 <p>这里始终从数据库读取，刷新或回到页面时会自动同步最新报告。</p>
             </div>
             <div class="search-box">
@@ -124,7 +122,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .report-page {
     flex: 1;
-    padding: 56px 32px 40px;
+    padding: 28px 32px 40px;
     overflow-y: auto;
 }
 
@@ -133,19 +131,7 @@ onBeforeUnmount(() => {
     align-items: flex-end;
     justify-content: space-between;
     gap: 20px;
-    margin-bottom: 22px;
-}
-
-.eyebrow {
-    color: var(--primary-color);
-    font-size: 12px;
-    font-weight: 700;
-}
-
-h2 {
-    margin: 6px 0;
-    color: var(--text-main);
-    font-size: 26px;
+    margin-bottom: 16px;
 }
 
 .report-header p,
@@ -155,6 +141,17 @@ h2 {
 .summary {
     color: var(--text-secondary);
     line-height: 1.6;
+}
+
+.report-header p {
+    margin: 0;
+    max-width: 560px;
+}
+
+.detail-panel h2 {
+    margin: 6px 0;
+    color: var(--text-main);
+    font-size: 26px;
 }
 
 .search-box {
