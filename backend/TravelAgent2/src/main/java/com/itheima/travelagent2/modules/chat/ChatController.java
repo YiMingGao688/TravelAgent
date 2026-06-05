@@ -3,6 +3,7 @@ package com.itheima.travelagent2.modules.chat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itheima.travelagent2.common.Result;
 import com.itheima.travelagent2.modules.chat.dto.ChatRequestDTO;
+import com.itheima.travelagent2.modules.chat.dto.ChatStreamEvent;
 import com.itheima.travelagent2.modules.chat.entity.ChatRecord;
 import com.itheima.travelagent2.modules.chat.service.ChatService;
 import com.itheima.travelagent2.modules.user.entity.UserProfile;
@@ -15,11 +16,17 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 @RestController
 @RequestMapping("/api/chat")
+/**
+ * AI 咨询接口层。
+ * 负责接收前端聊天、用户画像和历史记录请求，真正的上下文合并与大模型调用交给 ChatService。
+ */
 public class ChatController {
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
@@ -31,7 +38,36 @@ public class ChatController {
         this.objectMapper = objectMapper;
     }
 
+    @PostMapping("/send")
+    public Result<Map<String, Object>> sendMessage(@RequestBody ChatRequestDTO dto) {
+        if (dto.getMessage() == null || dto.getMessage().trim().isEmpty()) {
+            return Result.error(400, "Message is required");
+        }
+        List<ChatStreamEvent> events = chatService.streamChatEvents(dto).collectList().block();
+        StringBuilder reply = new StringBuilder();
+        Object tripContext = null;
+        if (events != null) {
+            for (ChatStreamEvent event : events) {
+                if ("message".equals(event.getEventName())) {
+                    reply.append(event.getData());
+                }
+                if ("context".equals(event.getEventName())) {
+                    tripContext = event.getData();
+                }
+            }
+        }
+        Map<String, Object> data = new HashMap<>();
+        data.put("aiResponse", reply.toString());
+        data.put("reply", reply.toString());
+        data.put("tripContext", tripContext);
+        return Result.success(data);
+    }
+
     @PostMapping(value = "/stream", produces = "text/event-stream;charset=UTF-8")
+    /**
+     * 流式聊天接口。
+     * 前端通过 SSE 分段接收 context/message/done 事件，用于实现打字机式 AI 回复。
+     */
     public SseEmitter streamMessage(@RequestBody ChatRequestDTO dto) {
         SseEmitter emitter = new SseEmitter(0L);
 
@@ -52,6 +88,10 @@ public class ChatController {
     }
 
     @PostMapping("/profile/save")
+    /**
+     * 保存用户画像。
+     * 用户画像是默认偏好来源，但优先级低于当前会话 TripContext 和用户本轮明确输入。
+     */
     public Result<?> saveProfile(@RequestBody ChatRequestDTO dto) {
         if (dto.getUserId() == null || dto.getUserId().trim().isEmpty()) {
             return Result.error(400, "User id is required");
@@ -79,6 +119,10 @@ public class ChatController {
     }
 
     @GetMapping("/history")
+    /**
+     * 查询指定会话历史。
+     * 前端重新打开同一 sessionId 时，可用该接口恢复多轮对话记录。
+     */
     public Result<List<ChatRecord>> history(@RequestParam String sessionId) {
         if (sessionId == null || sessionId.trim().isEmpty()) {
             return Result.error(400, "sessionId is required");

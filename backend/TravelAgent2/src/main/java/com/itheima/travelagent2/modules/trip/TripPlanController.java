@@ -18,6 +18,10 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/trip")
+/**
+ * 历史方案/我的行程接口。
+ * 客户端和管理端都应通过这里真实保存、查询、更新、删除 trip_plan 数据。
+ */
 public class TripPlanController {
 
     private final TripPlanService tripPlanService;
@@ -27,6 +31,10 @@ public class TripPlanController {
     }
 
     @PostMapping("/save")
+    /**
+     * 保存 AI 咨询或行程定制生成的方案。
+     * 前端传入的结构化字段会落到 trip_plan，便于后续一键导入交通规划和服务报告。
+     */
     public Result<TripPlan> savePlan(@RequestBody TripPlanSaveDTO dto) {
         if (dto.getUserId() == null || dto.getUserId().isBlank()) {
             return Result.error(400, "User id is required");
@@ -43,6 +51,10 @@ public class TripPlanController {
     }
 
     @GetMapping("/list")
+    /**
+     * 按用户查询历史方案列表。
+     * 列表必须以后端数据库为准，前端删除或新增后会重新调用该接口刷新。
+     */
     public Result<List<TripPlan>> listByUserId(@RequestParam String userId) {
         if (userId == null || userId.isBlank()) {
             return Result.error(400, "User id is required");
@@ -69,6 +81,10 @@ public class TripPlanController {
     }
 
     @DeleteMapping("/{id}")
+    /**
+     * 删除历史方案。
+     * 前端 Long 雪花 ID 会以字符串形式传递，Spring 自动转 Long 后执行真实数据库删除。
+     */
     public Result<String> delete(@PathVariable Long id) {
         System.out.println("后端收到删除 id = " + id);
         boolean removed = tripPlanService.deleteById(id);

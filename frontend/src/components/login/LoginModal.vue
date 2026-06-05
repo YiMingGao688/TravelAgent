@@ -1,5 +1,6 @@
 <script setup>
 import { reactive, ref } from 'vue'
+import { loginUser, registerUser } from '../../utils/api.js'
 
 defineProps({
     message: { type: String, default: '登录后可继续使用 AI 出行规划服务。' }
@@ -13,21 +14,36 @@ const form = reactive({
 })
 const mode = ref('login')
 const error = ref('')
+const loading = ref(false)
 
-function submit() {
+async function submit() {
     error.value = ''
     if (!form.account.trim()) {
-        error.value = '请输入手机号或邮箱'
+        error.value = '请输入手机号'
+        return
+    }
+    if (!/^1\d{10}$/.test(form.account.trim())) {
+        error.value = '请输入 11 位手机号'
         return
     }
     if (!form.password.trim()) {
         error.value = '请输入密码'
         return
     }
-    emit('login-success', {
-        account: form.account.trim(),
-        name: form.account.trim()
-    })
+    loading.value = true
+    try {
+        const payload = {
+            account: form.account.trim(),
+            phone: form.account.trim(),
+            password: form.password
+        }
+        const user = mode.value === 'login' ? await loginUser(payload) : await registerUser(payload)
+        emit('login-success', user)
+    } catch (e) {
+        error.value = e.message || (mode.value === 'login' ? '登录失败，请检查账号或密码' : '注册失败，请稍后重试')
+    } finally {
+        loading.value = false
+    }
 }
 </script>
 
@@ -43,8 +59,8 @@ function submit() {
             </div>
 
             <label>
-                手机号/邮箱
-                <input v-model="form.account" placeholder="请输入手机号或邮箱" autocomplete="username" />
+                手机号
+                <input v-model="form.account" placeholder="请输入手机号" autocomplete="tel" inputmode="numeric" maxlength="11" />
             </label>
             <label>
                 密码
@@ -53,8 +69,8 @@ function submit() {
 
             <p v-if="error" class="error">{{ error }}</p>
 
-            <button class="submit-btn" type="button" @click="submit">
-                {{ mode === 'login' ? '登录' : '注册并登录' }}
+            <button class="submit-btn" type="button" :disabled="loading" @click="submit">
+                {{ loading ? '处理中...' : (mode === 'login' ? '登录' : '注册并登录') }}
             </button>
 
             <p class="switch-mode">
@@ -153,6 +169,11 @@ input:focus {
     font: inherit;
     font-weight: 700;
     cursor: pointer;
+}
+
+.submit-btn:disabled {
+    opacity: 0.66;
+    cursor: not-allowed;
 }
 
 .switch-mode {

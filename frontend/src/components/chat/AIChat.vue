@@ -40,7 +40,7 @@ async function sendMessage() {
     const userMessage = {
         role: 'user',
         content: uploadedImage.value
-            ? `我上传了一张图片${inputText.value.trim() ? '，' + inputText.value.trim() : ''}`
+            ? `我上传了一张图片${inputText.value.trim() ? '：' + inputText.value.trim() : ''}`
             : inputText.value.trim(),
         time: getCurrentTime(),
         hasImage: !!uploadedImage.value,
@@ -184,7 +184,7 @@ defineExpose({ scrollToBottom, chatRef })
                 <textarea
                     v-model="inputText"
                     @keydown="handleKeydown"
-                    placeholder="告诉我您的出行目标，例如：从南京出发去杭州玩两天，预算 1500，偏舒适"
+                    placeholder="告诉我您的出行目标，例如：从南京出发去杭州玩两天，预算1500，偏舒适"
                 ></textarea>
                 <button class="icon-btn" @click="clearInput" title="清空">
                     <i class="fa-solid fa-trash-can"></i>
@@ -218,58 +218,47 @@ defineExpose({ scrollToBottom, chatRef })
 }
 
 .message-row {
-    width: 100%;
-    max-width: 900px;
+    width: min(920px, 100%);
     display: flex;
     gap: 12px;
-    margin-bottom: 24px;
+    margin-bottom: 20px;
 }
 
 .message-row.user {
-    justify-content: flex-end;
-}
-
-.message-row.user .avatar {
-    order: 2;
-    background: var(--primary-color);
-    color: white;
+    flex-direction: row-reverse;
 }
 
 .avatar {
     width: 36px;
     height: 36px;
+    flex: 0 0 36px;
     border-radius: 50%;
-    background: var(--card-bg);
-    border: 1px solid var(--border-color);
-    color: var(--primary-color);
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
-    font-size: 12px;
-    font-weight: 700;
+    background: var(--primary-light);
+    color: var(--primary-color);
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.message-row.user .avatar {
+    background: var(--primary-color);
+    color: white;
 }
 
 .message-content {
-    max-width: 76%;
-    display: flex;
-    flex-direction: column;
-    position: relative;
-}
-
-.message-row.user .message-content {
-    align-items: flex-end;
+    max-width: 78%;
 }
 
 .bubble {
-    padding: 16px 20px;
-    border-radius: 18px;
+    padding: 13px 16px;
+    border-radius: 14px;
     background: var(--card-bg);
     border: 1px solid var(--border-color);
     color: var(--text-main);
     line-height: 1.75;
-    white-space: pre-wrap;
-    word-break: break-word;
+    font-size: 14px;
     box-shadow: var(--shadow-sm);
 }
 
@@ -279,19 +268,25 @@ defineExpose({ scrollToBottom, chatRef })
     border-color: var(--primary-color);
 }
 
+.time {
+    margin-top: 6px;
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
 .structured-card {
     margin-top: 10px;
-    padding: 12px;
+    padding: 14px;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--bg-color);
+    border-radius: 12px;
+    background: var(--card-bg);
 }
 
 .structured-head {
     display: flex;
-    align-items: center;
     justify-content: space-between;
-    margin-bottom: 10px;
+    gap: 12px;
+    margin-bottom: 12px;
 }
 
 .structured-head strong {
@@ -307,101 +302,67 @@ defineExpose({ scrollToBottom, chatRef })
 .field-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
+    gap: 10px;
 }
 
 .field-grid div {
-    min-height: 58px;
-    padding: 8px;
-    border: 1px solid var(--border-color);
+    padding: 10px;
     border-radius: 8px;
-    background: var(--card-bg);
+    background: var(--bg-color);
+}
+
+.field-grid strong,
+.field-grid span {
+    display: block;
+}
+
+.field-grid strong {
+    margin-top: 5px;
+    color: var(--text-main);
 }
 
 .field-grid .wide {
     grid-column: span 3;
 }
 
-.field-grid strong {
-    display: block;
-    margin-top: 4px;
-    color: var(--text-main);
-    line-height: 1.4;
-}
-
-.time {
-    margin-top: 6px;
-    font-size: 12px;
-    color: var(--text-secondary);
-}
-
 .plan-actions {
     display: flex;
     gap: 8px;
-    flex-wrap: wrap;
     margin-top: 10px;
 }
 
 .plan-btn {
+    border: 0;
+    border-radius: 8px;
+    padding: 9px 12px;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 7px 12px;
-    border: none;
-    border-radius: 8px;
+    gap: 7px;
     background: var(--primary-color);
     color: white;
     cursor: pointer;
-    font-size: 13px;
 }
 
 .plan-btn.ghost {
-    background: var(--card-bg);
+    background: var(--primary-light);
     color: var(--primary-color);
-    border: 1px solid var(--primary-color);
 }
 
-.typing-indicator {
-    display: flex;
-    gap: 4px;
-}
-
-.typing-indicator span {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--text-secondary);
-    animation: bounce 1.2s infinite ease-in-out;
-}
-
-.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-
-.thinking-bubble {
-    min-width: min(420px, 72vw);
-    background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(14, 165, 233, 0.08)), var(--card-bg);
+.thinking-bubble,
+.upload-indicator {
+    display: grid;
+    gap: 10px;
 }
 
 .thinking-head {
     display: flex;
     align-items: center;
-    gap: 12px;
-    color: var(--text-main);
-}
-
-.thinking-head strong {
-    font-size: 15px;
+    gap: 10px;
 }
 
 .thinking-orbit {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    display: flex;
     gap: 4px;
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    background: rgba(37, 99, 235, 0.12);
 }
 
 .thinking-orbit span {
@@ -409,84 +370,97 @@ defineExpose({ scrollToBottom, chatRef })
     height: 6px;
     border-radius: 50%;
     background: var(--primary-color);
-    animation: bounce 1.2s infinite ease-in-out;
+    animation: pulse 1s infinite alternate;
 }
 
-.thinking-orbit span:nth-child(2) { animation-delay: 0.16s; }
-.thinking-orbit span:nth-child(3) { animation-delay: 0.32s; }
+.thinking-orbit span:nth-child(2) {
+    animation-delay: 0.15s;
+}
+
+.thinking-orbit span:nth-child(3) {
+    animation-delay: 0.3s;
+}
 
 .thinking-steps {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 12px;
 }
 
 .thinking-steps span {
-    padding: 5px 9px;
+    padding: 5px 8px;
     border-radius: 999px;
-    background: rgba(37, 99, 235, 0.08);
-    color: var(--text-secondary);
+    background: var(--primary-light);
+    color: var(--primary-color);
     font-size: 12px;
 }
 
-.upload-indicator {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+@keyframes pulse {
+    from { opacity: 0.35; transform: translateY(0); }
+    to { opacity: 1; transform: translateY(-3px); }
 }
 
 .input-wrapper {
-    flex-shrink: 0;
-    padding: 16px 32px;
+    padding: 14px 32px 20px;
     border-top: 1px solid var(--border-color);
+    background: var(--card-bg);
+}
+
+.image-preview {
+    width: min(920px, 100%);
+    margin: 0 auto 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    color: var(--text-secondary);
     background: var(--bg-color);
 }
 
+.image-preview button,
+.icon-btn,
+.send-btn,
+.stop-btn {
+    border: 0;
+    cursor: pointer;
+}
+
 .input-box {
-    max-width: 900px;
+    width: min(920px, 100%);
     margin: 0 auto;
     display: flex;
     align-items: flex-end;
-    gap: 10px;
-    padding: 12px 14px;
-    border-radius: 18px;
-    background: var(--card-bg);
+    gap: 8px;
+    padding: 8px;
     border: 1px solid var(--border-color);
-    box-shadow: var(--shadow-md);
+    border-radius: 14px;
+    background: var(--bg-color);
 }
 
 .input-box textarea {
     flex: 1;
-    min-height: 28px;
-    max-height: 120px;
-    border: none;
+    min-height: 42px;
+    max-height: 110px;
+    border: 0;
     outline: none;
     resize: none;
     background: transparent;
     color: var(--text-main);
-    font-size: 15px;
     line-height: 1.5;
-    font-family: inherit;
 }
 
 .icon-btn,
 .send-btn,
-.stop-btn,
-.image-preview button {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    border: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
+.stop-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
 }
 
-.icon-btn,
-.image-preview button {
-    background: var(--bg-color);
+.icon-btn {
+    background: transparent;
     color: var(--text-secondary);
 }
 
@@ -496,7 +470,7 @@ defineExpose({ scrollToBottom, chatRef })
 }
 
 .send-btn:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: not-allowed;
 }
 
@@ -505,34 +479,13 @@ defineExpose({ scrollToBottom, chatRef })
     color: white;
 }
 
-.image-preview {
-    max-width: 900px;
-    margin: 0 auto 10px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 12px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--card-bg);
-    color: var(--text-secondary);
-    font-size: 14px;
-}
-
-@keyframes bounce {
-    0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
-    40% { transform: scale(1); opacity: 1; }
-}
-
-@media (max-width: 768px) {
-    .chat-container,
-    .input-wrapper {
-        padding-left: 16px;
-        padding-right: 16px;
+@media (max-width: 760px) {
+    .chat-container {
+        padding: 18px 16px;
     }
 
     .message-content {
-        max-width: 86%;
+        max-width: calc(100% - 48px);
     }
 
     .field-grid {
@@ -541,6 +494,10 @@ defineExpose({ scrollToBottom, chatRef })
 
     .field-grid .wide {
         grid-column: auto;
+    }
+
+    .input-wrapper {
+        padding: 12px 16px;
     }
 }
 </style>

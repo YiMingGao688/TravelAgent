@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import logoUrl from '../../assets/logo.png'
 
 defineProps({
     userName: { type: String, default: '' },
@@ -34,11 +35,11 @@ function toggleSidebar() {
     <div :class="['sidebar-host', { collapsed: isCollapsed }]">
         <aside class="sidebar-shell">
             <div class="sidebar-inner">
-                <div class="sidebar-logo" title="智能出行助手">
-                    <div class="logo-icon"><i class="fa-solid fa-plane-departure"></i></div>
+                <div class="sidebar-logo" title="七维智行">
+                    <img class="logo-icon" :src="logoUrl" alt="七维智行" />
                     <div class="logo-text">
-                        <div>出行助手</div>
-                        <span>智能出行平台</span>
+                        <div>七维智行</div>
+                        <span>AI 智慧出行全过程服务平台</span>
                     </div>
                 </div>
 
@@ -157,13 +158,9 @@ button {
     height: var(--brand-icon-size);
     flex: 0 0 var(--brand-icon-size);
     border-radius: 10px;
-    background: #2563eb;
-    color: #fff;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 17px;
-    line-height: 1;
+    display: block;
+    object-fit: cover;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.16);
     transform: translateY(-4px);
 }
 

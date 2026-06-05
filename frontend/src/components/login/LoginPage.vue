@@ -5,6 +5,7 @@
  * 包含左右分栏布局，左侧品牌展示，右侧登录表单
  */
 import { ref, computed } from 'vue'
+import logoUrl from '../../assets/logo.png'
 
 /** 向父组件发送登录成功事件 */
 const emit = defineEmits(['loginSuccess'])
@@ -15,20 +16,18 @@ const isLoginMode = ref(true)
 /** 提交按钮加载状态 */
 const isLoading = ref(false)
 
-/** 表单数据：邮箱和密码 */
+/** 表单数据：手机号和密码 */
 const formData = ref({
-    email: '',
+    phone: '',
     password: ''
 })
 
 /**
  * 表单验证计算属性
- * 验证规则：邮箱格式正确 且 密码长度 >= 6位
+ * 验证规则：11 位手机号 且 密码长度 >= 6位
  */
 const isFormValid = computed(() => {
-    // 邮箱格式正则：必须包含@和.，且@后要有内容
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    return emailRegex.test(formData.value.email) && formData.value.password.length >= 6
+    return /^1\d{10}$/.test(formData.value.phone) && formData.value.password.length >= 6
 })
 
 /**
@@ -52,21 +51,22 @@ async function handleSubmit() {
 
     try {
         // 根据模式选择API地址：登录或注册
-        const url = isLoginMode.value ? '/user/login' : '/user/register'
+        const url = isLoginMode.value ? '/api/auth/login' : '/api/auth/register'
 
         // 发送POST请求
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                email: formData.value.email,
+                account: formData.value.phone,
+                phone: formData.value.phone,
                 password: formData.value.password
             })
         }).then(r => r.json())
 
         // 请求成功：保存用户信息并通知父组件
         if (res.code === 200) {
-            sessionStorage.setItem('loginUser', formData.value.email)
+            sessionStorage.setItem('loginUser', formData.value.phone)
             emit('loginSuccess')
         } else {
             // 显示后端返回的错误信息
@@ -87,10 +87,8 @@ async function handleSubmit() {
         <!-- 左侧品牌展示区 -->
         <div class="brand-section">
             <div class="logo-container">
-                <div class="logo-icon">
-                    <i class="fa-solid fa-plane-departure"></i>
-                </div>
-                <div class="logo-text">智慧出行助手</div>
+                <img class="logo-icon" :src="logoUrl" alt="七维智行">
+                <div class="logo-text">七维智行</div>
             </div>
 
             <div class="hero-content">
@@ -110,16 +108,18 @@ async function handleSubmit() {
 
                 <!-- 登录/注册表单 -->
                 <form @submit.prevent="handleSubmit">
-                    <!-- 邮箱输入框 -->
+                    <!-- 手机号输入框 -->
                     <div class="input-group">
-                        <label>邮箱账号</label>
+                        <label>手机号</label>
                         <div class="input-wrapper">
-                            <i class="fa-regular fa-envelope"></i>
+                            <i class="fa-solid fa-phone"></i>
                             <input
-                                type="email"
+                                type="tel"
                                 class="input-field"
-                                placeholder="name@example.com"
-                                v-model="formData.email"
+                                placeholder="请输入手机号"
+                                v-model="formData.phone"
+                                inputmode="numeric"
+                                maxlength="11"
                                 required
                             >
                         </div>

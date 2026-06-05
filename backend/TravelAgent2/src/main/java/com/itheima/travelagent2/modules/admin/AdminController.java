@@ -2,8 +2,19 @@ package com.itheima.travelagent2.modules.admin;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.itheima.travelagent2.common.Result;
+import com.itheima.travelagent2.modules.aftersale.AfterSaleOrderService;
+import com.itheima.travelagent2.modules.aftersale.entity.AfterSaleOrder;
+import com.itheima.travelagent2.modules.booking.entity.BookingOrder;
+import com.itheima.travelagent2.modules.booking.entity.Hotel;
+import com.itheima.travelagent2.modules.booking.entity.TrafficProduct;
+import com.itheima.travelagent2.modules.booking.service.BookingOrderService;
+import com.itheima.travelagent2.modules.booking.service.HotelService;
+import com.itheima.travelagent2.modules.booking.service.TrafficProductService;
 import com.itheima.travelagent2.modules.chat.entity.ChatRecord;
 import com.itheima.travelagent2.modules.chat.mapper.ChatRecordMapper;
+import com.itheima.travelagent2.modules.intent.dto.StructuredTravelDemand;
+import com.itheima.travelagent2.modules.risk.RiskService;
+import com.itheima.travelagent2.modules.risk.dto.RiskWarningDTO;
 import com.itheima.travelagent2.modules.route.entity.Route;
 import com.itheima.travelagent2.modules.route.mapper.RouteMapper;
 import com.itheima.travelagent2.modules.route.service.RouteService;
@@ -13,6 +24,8 @@ import com.itheima.travelagent2.modules.servicereport.service.TravelServiceRepor
 import com.itheima.travelagent2.modules.smartservice.entity.SmartServiceRecord;
 import com.itheima.travelagent2.modules.smartservice.mapper.SmartServiceRecordMapper;
 import com.itheima.travelagent2.modules.smartservice.service.SmartService;
+import com.itheima.travelagent2.modules.timeline.TravelTimelineService;
+import com.itheima.travelagent2.modules.timeline.entity.TravelTimelineItem;
 import com.itheima.travelagent2.modules.trip.entity.TripPlan;
 import com.itheima.travelagent2.modules.trip.mapper.TripPlanMapper;
 import com.itheima.travelagent2.modules.trip.service.TripPlanService;
@@ -22,6 +35,7 @@ import com.itheima.travelagent2.modules.user.mapper.UserMapper;
 import com.itheima.travelagent2.modules.user.mapper.UserProfileMapper;
 import com.itheima.travelagent2.modules.user.service.UserService;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -57,6 +71,13 @@ public class AdminController {
     private final TripPlanMapper tripPlanMapper;
     private final RouteMapper routeMapper;
     private final SmartServiceRecordMapper smartServiceRecordMapper;
+    private final BookingOrderService bookingOrderService;
+    private final HotelService hotelService;
+    private final TrafficProductService trafficProductService;
+    private final TravelTimelineService timelineService;
+    private final AfterSaleOrderService afterSaleOrderService;
+    private final RiskService riskService;
+    private final PasswordEncoder passwordEncoder;
 
     @Value("${spring.ai.zhipu.api-key:}")
     private String zhipuApiKey;
@@ -74,7 +95,14 @@ public class AdminController {
                            UserProfileMapper userProfileMapper,
                            TripPlanMapper tripPlanMapper,
                            RouteMapper routeMapper,
-                           SmartServiceRecordMapper smartServiceRecordMapper) {
+                           SmartServiceRecordMapper smartServiceRecordMapper,
+                           BookingOrderService bookingOrderService,
+                           HotelService hotelService,
+                           TrafficProductService trafficProductService,
+                           TravelTimelineService timelineService,
+                           AfterSaleOrderService afterSaleOrderService,
+                           RiskService riskService,
+                           PasswordEncoder passwordEncoder) {
         this.userService = userService;
         this.tripPlanService = tripPlanService;
         this.routeService = routeService;
@@ -86,16 +114,37 @@ public class AdminController {
         this.tripPlanMapper = tripPlanMapper;
         this.routeMapper = routeMapper;
         this.smartServiceRecordMapper = smartServiceRecordMapper;
+        this.bookingOrderService = bookingOrderService;
+        this.hotelService = hotelService;
+        this.trafficProductService = trafficProductService;
+        this.timelineService = timelineService;
+        this.afterSaleOrderService = afterSaleOrderService;
+        this.riskService = riskService;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @PostMapping("/login")
     public Result<Map<String, Object>> login(@RequestBody Map<String, String> body) {
         String username = body.getOrDefault("username", "");
         String password = body.getOrDefault("password", "");
-        if ("admin".equals(username) && "admin123".equals(password)) {
+        User admin = userService.findByAccount(username);
+        boolean passwordMatched = admin != null
+                && admin.getPassword() != null
+                && (passwordEncoder.matches(password, admin.getPassword()) || password.equals(admin.getPassword()));
+        if (admin != null
+                && ("ADMIN".equalsIgnoreCase(admin.getRole()) || "SUPER_ADMIN".equalsIgnoreCase(admin.getRole()))
+                && !"DISABLED".equalsIgnoreCase(admin.getStatus())
+                && passwordMatched) {
+            if (password.equals(admin.getPassword())) {
+                admin.setPassword(passwordEncoder.encode(password));
+            }
+            admin.setLastLoginTime(LocalDateTime.now());
+            userMapper.updateById(admin);
             Map<String, Object> data = new HashMap<>();
             data.put("token", "simple-admin-token");
-            data.put("username", username);
+            data.put("username", admin.getUsername());
+            data.put("role", admin.getRole());
+            data.put("userId", admin.getId());
             return Result.success("login success", data);
         }
         return Result.error(401, "admin username or password is incorrect");
@@ -108,6 +157,9 @@ public class AdminController {
         List<Route> routes = routeService.listAll();
         List<SmartServiceRecord> services = smartService.listAll();
         List<TravelServiceReport> reports = reportService.listAll(null);
+        List<BookingOrder> orders = bookingOrderService.listAll();
+        List<TravelTimelineItem> timelines = timelineService.listAll();
+        List<AfterSaleOrder> afterSales = afterSaleOrderService.listAll();
         Long chatRecordCount = chatRecordMapper.selectCount(null);
         Long profileCount = userProfileMapper.selectCount(null);
 
@@ -118,16 +170,20 @@ public class AdminController {
         data.put("routeCount", routes.size());
         data.put("smartServiceCount", services.size());
         data.put("serviceReportCount", reports.size());
+        data.put("bookingOrderCount", orders.size());
+        data.put("timelineCount", timelines.size());
+        data.put("afterSaleCount", afterSales.size());
         data.put("profileCount", profileCount);
-        data.put("todayNewCount", countToday(users, tripPlans, routes, services, reports));
+        data.put("todayNewCount", countToday(users, tripPlans, routes, services, reports, orders));
         data.put("last7Days", last7Days());
         data.put("userTrend", trendUsers(users));
-        data.put("tripPlanTrend", trendTripPlans(tripPlans));
+        data.put("tripPlanTrend", trendOrders(orders));
         data.put("reportTrend", trendReports(reports));
-        data.put("preferenceDistribution", distribution(tripPlans, TripPlan::getTravelPreference, "未填写"));
-        data.put("serviceTypeDistribution", distribution(services, SmartServiceRecord::getServiceType, "其他服务"));
-        data.put("popularStartPlaces", topPlaces(routes, Route::getStartPoint));
-        data.put("popularEndPlaces", topPlaces(routes, Route::getEndPoint));
+        data.put("preferenceDistribution", distribution(orders, BookingOrder::getOrderType, "未知订单"));
+        data.put("serviceTypeDistribution", distribution(orders, BookingOrder::getStatus, "未知状态"));
+        // 城市热度必须来自真实下单行为：用户下单后 booking_order.start_place / end_place 会实时进入排名。
+        data.put("popularStartPlaces", topPlaces(orders, BookingOrder::getStartPlace));
+        data.put("popularEndPlaces", topPlaces(orders, BookingOrder::getEndPlace));
         data.put("systemStatus", buildSystemStatus());
         return Result.success(data);
     }
@@ -161,7 +217,7 @@ public class AdminController {
         if (user.getPassword() == null || user.getPassword().isBlank()) {
             user.setPassword("123456");
         }
-        userMapper.insert(user);
+        userService.register(user);
         return Result.success("created", user);
     }
 
@@ -170,6 +226,8 @@ public class AdminController {
         user.setId(id);
         if (user.getPassword() != null && user.getPassword().isBlank()) {
             user.setPassword(null);
+        } else if (user.getPassword() != null) {
+            user.setPassword(passwordEncoder.encode(user.getPassword()));
         }
         userMapper.updateById(user);
         return Result.success("updated");
@@ -177,6 +235,13 @@ public class AdminController {
 
     @DeleteMapping("/users/{id}")
     public Result<String> deleteUser(@PathVariable Integer id) {
+        User target = userMapper.selectById(id);
+        if (target != null && "SUPER_ADMIN".equalsIgnoreCase(target.getRole())) {
+            Long superAdminCount = userMapper.selectCount(new LambdaQueryWrapper<User>().eq(User::getRole, "SUPER_ADMIN"));
+            if (superAdminCount <= 1) {
+                return Result.error(400, "至少需要保留一个超级管理员账号");
+            }
+        }
         userService.deleteById(id);
         return Result.success("deleted");
     }
@@ -269,6 +334,70 @@ public class AdminController {
         return Result.success(routeService.listAll());
     }
 
+    @GetMapping("/orders")
+    public Result<List<BookingOrder>> orders() {
+        return Result.success(bookingOrderService.listAll());
+    }
+
+    @GetMapping("/hotels")
+    public Result<List<Hotel>> hotels() {
+        return Result.success(hotelService.listAll());
+    }
+
+    @GetMapping("/traffic")
+    public Result<List<TrafficProduct>> traffic() {
+        return Result.success(trafficProductService.listAll());
+    }
+
+    @GetMapping("/risks")
+    public Result<List<RiskWarningDTO>> risks() {
+        StructuredTravelDemand demand = new StructuredTravelDemand();
+        demand.setPeopleType("ELDERLY");
+        demand.setLuggageInfo("有行李");
+        demand.setTransportPreference("TRAIN");
+        return Result.success(riskService.generateWarnings(demand, null));
+    }
+
+    @GetMapping("/timelines")
+    public Result<List<TravelTimelineItem>> timelines() {
+        return Result.success(timelineService.listAll());
+    }
+
+    @GetMapping("/after-sales")
+    public Result<List<AfterSaleOrder>> afterSales() {
+        return Result.success(afterSaleOrderService.listAll());
+    }
+
+    @PutMapping("/after-sales/{id}")
+    public Result<AfterSaleOrder> updateAfterSale(@PathVariable Long id, @RequestBody AfterSaleOrder order) {
+        AfterSaleOrder updated = afterSaleOrderService.updateStatus(id, order);
+        return updated == null ? Result.error(404, "售后工单不存在") : Result.success(updated);
+    }
+
+    @DeleteMapping("/orders/{id}")
+    public Result<String> deleteOrder(@PathVariable Long id) {
+        if (!bookingOrderService.removeById(id)) {
+            return Result.error("删除失败，数据库中不存在 id = " + id + " 的模拟订单");
+        }
+        return Result.success("deleted");
+    }
+
+    @DeleteMapping("/hotels/{id}")
+    public Result<String> deleteHotel(@PathVariable Long id) {
+        if (!hotelService.removeById(id)) {
+            return Result.error("删除失败，数据库中不存在 id = " + id + " 的酒店数据");
+        }
+        return Result.success("deleted");
+    }
+
+    @DeleteMapping("/traffic/{id}")
+    public Result<String> deleteTraffic(@PathVariable Long id) {
+        if (!trafficProductService.removeById(id)) {
+            return Result.error("删除失败，数据库中不存在 id = " + id + " 的交通产品");
+        }
+        return Result.success("deleted");
+    }
+
     @PostMapping("/routes")
     public Result<Route> createRoute(@RequestBody Route route) {
         routeMapper.insert(route);
@@ -347,12 +476,14 @@ public class AdminController {
                             List<TripPlan> tripPlans,
                             List<Route> routes,
                             List<SmartServiceRecord> services,
-                            List<TravelServiceReport> reports) {
+                            List<TravelServiceReport> reports,
+                            List<BookingOrder> orders) {
         return users.stream().filter(item -> isToday(item.getCreateTime())).count()
                 + tripPlans.stream().filter(item -> isToday(item.getCreateTime())).count()
                 + routes.stream().filter(item -> isToday(item.getCreateTime())).count()
                 + services.stream().filter(item -> isToday(item.getCreateTime())).count()
-                + reports.stream().filter(item -> isToday(item.getCreateTime())).count();
+                + reports.stream().filter(item -> isToday(item.getCreateTime())).count()
+                + orders.stream().filter(item -> isToday(item.getCreateTime())).count();
     }
 
     private boolean isToday(LocalDateTime value) {
@@ -374,6 +505,10 @@ public class AdminController {
 
     private List<Long> trendTripPlans(List<TripPlan> plans) {
         return trend(plans.stream().map(TripPlan::getCreateTime).collect(Collectors.toList()));
+    }
+
+    private List<Long> trendOrders(List<BookingOrder> orders) {
+        return trend(orders.stream().map(BookingOrder::getCreateTime).collect(Collectors.toList()));
     }
 
     private List<Long> trendReports(List<TravelServiceReport> reports) {

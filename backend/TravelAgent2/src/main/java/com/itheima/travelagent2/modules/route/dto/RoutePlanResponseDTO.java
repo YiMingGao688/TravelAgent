@@ -9,6 +9,7 @@ import java.util.List;
 public class RoutePlanResponseDTO {
     private LocationInfo startLocation;
     private LocationInfo endLocation;
+    private List<LocationInfo> waypointLocations;
     private WeatherInfo startWeather;
     private WeatherInfo endWeather;
     private List<Route> routes;

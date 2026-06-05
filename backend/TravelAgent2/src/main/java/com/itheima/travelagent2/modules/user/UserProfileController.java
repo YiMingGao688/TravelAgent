@@ -18,6 +18,10 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/profile")
+/**
+ * 用户出行画像接口。
+ * 画像用于保存常驻城市、偏好、备注等默认信息，AI 咨询会把它作为当前会话上下文的兜底来源。
+ */
 public class UserProfileController {
 
     private final UserProfileMapper profileMapper;
@@ -27,6 +31,10 @@ public class UserProfileController {
     }
 
     @GetMapping("/list")
+    /**
+     * 查询用户画像。
+     * userId 为空时可给管理端查看全部画像，客户端一般按当前登录用户查询。
+     */
     public Result<List<UserProfile>> list(@RequestParam(required = false) String userId) {
         LambdaQueryWrapper<UserProfile> wrapper = new LambdaQueryWrapper<>();
         if (userId != null && !userId.isBlank()) {
@@ -55,6 +63,10 @@ public class UserProfileController {
     }
 
     @PutMapping("/{id}")
+    /**
+     * 更新用户画像。
+     * 修改后前端会同步当前 TripContext，让后续咨询立刻读取最新偏好。
+     */
     public Result<UserProfile> update(@PathVariable Long id, @RequestBody UserProfile profile) {
         if (profileMapper.selectById(id) == null) {
             return Result.error(404, "Profile not found");

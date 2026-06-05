@@ -2,9 +2,14 @@ import axios from 'axios'
 
 const CHAT_API_BASE = '/api/chat'
 
+/**
+ * 统一的 fetch 请求入口。
+ * 后端接口约定返回 Result(code/message/data)，这里集中处理错误码，页面层只关心业务数据。
+ */
 async function request(url, options = {}) {
     const response = await fetch(url, {
         headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        credentials: 'include',
         ...options
     })
     const result = await response.json()
@@ -14,6 +19,35 @@ async function request(url, options = {}) {
     return result
 }
 
+export async function loginUser(payload) {
+    const result = await request('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    })
+    return result.data
+}
+
+export async function registerUser(payload) {
+    const result = await request('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    })
+    return result.data
+}
+
+export async function getCurrentUser() {
+    const result = await request('/api/auth/me')
+    return result.data
+}
+
+export async function logoutUser() {
+    return request('/api/auth/logout', { method: 'POST' })
+}
+
+/**
+ * axios 删除/更新类请求的统一结果校验。
+ * 保留 code=200、code=1、success=true 三种兼容判断，是为了兼容项目不同阶段已有接口返回格式。
+ */
 function handleAxiosResult(response) {
     const result = response.data
     console.log('删除接口返回：', result)
@@ -46,6 +80,7 @@ export async function getTripContext(sessionId) {
 }
 
 export function streamChat(params, signal) {
+    // AI 咨询的 SSE 流式接口，前端会逐段接收 message/context/done 事件实现打字机效果。
     return fetch(`${CHAT_API_BASE}/stream`, {
         method: 'POST',
         headers: {
@@ -58,6 +93,7 @@ export function streamChat(params, signal) {
 }
 
 export function parseSSEEvent(data) {
+    // 将浏览器读到的 SSE 文本块解析成事件名和数据体，供 useChat 组合式函数分发处理。
     const lines = data.split('\n')
     let eventType = ''
     let eventData = ''
@@ -111,6 +147,7 @@ export async function updateTripPlan(id, payload) {
 }
 
 export async function queryRoutes(payload) {
+    // 交通规划真实调用后端：后端会对接高德地理编码、路线、天气，并返回路线列表。
     const result = await request('/api/route/query', {
         method: 'POST',
         body: JSON.stringify(payload)
@@ -186,6 +223,7 @@ export async function deleteSmartService(id) {
 }
 
 export async function saveServiceReport(payload) {
+    // 一站式服务报告保存到数据库，历史出行服务报告页面会从对应接口重新拉取。
     const result = await request('/api/service-report/save', {
         method: 'POST',
         body: JSON.stringify(payload)
@@ -218,6 +256,181 @@ export async function deleteServiceReport(id) {
 export async function updateServiceReport(id, payload) {
     const result = await request(`/api/service-report/${id}`, {
         method: 'PUT',
+        body: JSON.stringify(payload)
+    })
+    return result.data
+}
+
+export async function searchHotels(params = {}) {
+    const query = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') query.set(key, value)
+    })
+    const result = await request(`/api/hotels/search?${query.toString()}`)
+    return result.data || []
+}
+
+export async function getLocationTips(keyword) {
+    if (!keyword) return []
+    const result = await request(`/api/location/tips?keyword=${encodeURIComponent(keyword)}`)
+    return result.data || []
+}
+
+/**
+ * 带防抖和请求取消的地点提示查询。
+ * - 500ms 防抖
+ * - keyword < 2 不请求
+ * - 相同 keyword 不重复请求
+ * - 新请求自动取消上一次未完成的请求
+ * - 30 秒简单内存缓存
+ */
+export function createDebouncedLocationTips() {
+    let timer = null
+    let controller = null
+    let lastKeyword = ''
+    const cache = new Map() // key -> { data, expireAt }
+
+    return function debouncedGetTips(keyword) {
+        return new Promise((resolve, reject) => {
+            clearTimeout(timer)
+
+            const kw = (keyword || '').trim()
+            if (kw.length < 2) {
+                resolve([])
+                return
+            }
+
+            // 与上一次完全相同则不请求
+            if (kw === lastKeyword) {
+                // 但需要等缓存；下面走缓存路径
+            }
+
+            timer = setTimeout(async () => {
+                // 取消上一次未完成的请求
+                if (controller) {
+                    controller.abort()
+                    controller = null
+                }
+
+                lastKeyword = kw
+
+                // 检查缓存（30 秒）
+                const cached = cache.get(kw)
+                if (cached && Date.now() < cached.expireAt) {
+                    resolve(cached.data)
+                    return
+                }
+
+                controller = new AbortController()
+                const signal = controller.signal
+
+                try {
+                    const response = await fetch(
+                        `/api/location/tips?keyword=${encodeURIComponent(kw)}`,
+                        {
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            signal
+                        }
+                    )
+                    const result = await response.json()
+                    if (result.code && result.code !== 200) {
+                        throw new Error(result.message || '地点查询失败')
+                    }
+                    const data = result.data || []
+
+                    // 缓存 30 秒
+                    cache.set(kw, { data, expireAt: Date.now() + 30_000 })
+
+                    resolve(data)
+                } catch (err) {
+                    if (err.name === 'AbortError') {
+                        // 请求被取消，不 reject
+                        resolve([])
+                        return
+                    }
+                    // 如果是高德限流（后端返回的 message 中包含关键词）
+                    reject(err)
+                } finally {
+                    if (controller && controller.signal === signal) {
+                        controller = null
+                    }
+                }
+            }, 500)
+        })
+    }
+}
+
+export async function getHotelDetail(id) {
+    const result = await request(`/api/hotels/${id}`)
+    return result.data
+}
+
+export async function createHotelOrder(payload) {
+    const result = await request('/api/hotels/orders', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    })
+    return result.data
+}
+
+export async function searchTraffic(params = {}) {
+    const query = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') query.set(key, value)
+    })
+    const result = await request(`/api/traffic/search?${query.toString()}`)
+    return result.data || []
+}
+
+export async function createBookingOrder(payload) {
+    const result = await request('/api/orders/create', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    })
+    return result.data
+}
+
+export async function listUserOrders(userId) {
+    if (!userId) return []
+    const result = await request(`/api/orders/user/${encodeURIComponent(userId)}`)
+    return result.data || []
+}
+
+export async function payBookingOrder(id) {
+    const result = await request(`/api/orders/${id}/pay`, { method: 'PUT' })
+    return result.data
+}
+
+export async function cancelBookingOrder(id) {
+    const result = await request(`/api/orders/${id}/cancel`, { method: 'PUT' })
+    return result.data
+}
+
+export async function askAssistant(payload) {
+    const result = await request('/api/assistant/ask', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    })
+    return result.data
+}
+
+export async function getWeather(city) {
+    const result = await request(`/api/weather?city=${encodeURIComponent(city)}`)
+    return result.data
+}
+
+export async function planTravelChain(payload) {
+    const result = await request('/api/travel-chain/plan', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    })
+    return result.data
+}
+
+export async function createAfterSaleOrder(payload) {
+    const result = await request('/api/after-sale/orders', {
+        method: 'POST',
         body: JSON.stringify(payload)
     })
     return result.data

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { adminCreate, adminDelete, adminGet, adminLogin, adminUpdate } from '../../utils/api.js'
+import logoUrl from '../../assets/logo.png'
 
 const loggedIn = ref(sessionStorage.getItem('adminToken') === 'simple-admin-token')
 const loginForm = ref({ username: 'admin', password: 'admin123' })
@@ -15,6 +16,7 @@ const pageSize = ref(10)
 const editor = ref(null)
 const lastRefreshTime = ref('')
 const dashboardError = ref('')
+const collapsedGroups = ref({})
 
 const modules = [
     { id: 'dashboard', name: '运营总览', icon: 'fa-chart-pie' },
@@ -23,15 +25,44 @@ const modules = [
     { id: 'routes', name: '路线记录管理', icon: 'fa-route' },
     { id: 'smart-services', name: '一站式服务记录', icon: 'fa-clipboard-check' },
     { id: 'service-reports', name: '出行服务报告', icon: 'fa-file-lines' },
+    { id: 'orders', name: '全部模拟订单', icon: 'fa-receipt' },
+    { id: 'orders-flight', name: '飞机模拟订单', icon: 'fa-plane' },
+    { id: 'orders-train', name: '高铁模拟订单', icon: 'fa-train' },
+    { id: 'orders-hotel', name: '酒店模拟订单', icon: 'fa-hotel' },
+    { id: 'orders-cruise', name: '邮轮模拟订单', icon: 'fa-ship' },
+    { id: 'orders-taxi', name: '接驳用车订单', icon: 'fa-taxi' },
+    { id: 'hotels', name: '酒店模拟数据', icon: 'fa-hotel' },
+    { id: 'traffic', name: '交通产品模拟数据', icon: 'fa-train' },
+    { id: 'risks', name: '风险预警管理', icon: 'fa-triangle-exclamation' },
+    { id: 'timelines', name: '全过程时间轴', icon: 'fa-timeline' },
+    { id: 'after-sales', name: '售后工单管理', icon: 'fa-headset' },
+    { id: 'refund-applications', name: '退款申请审核', icon: 'fa-money-bill-transfer' },
     { id: 'chat-records', name: '咨询记录管理', icon: 'fa-comments' },
     { id: 'profiles', name: '用户偏好管理', icon: 'fa-id-card' }
 ]
 
+const moduleGroups = [
+    { name: '总览', ids: ['dashboard'] },
+    { name: 'AI 咨询板块', ids: ['chat-records', 'profiles', 'trip-plans', 'routes'] },
+    { name: '模拟数据', ids: ['hotels', 'traffic'] },
+    { name: '模拟订单', ids: ['orders', 'orders-flight', 'orders-train', 'orders-hotel', 'orders-cruise', 'orders-taxi'], collapsed: true },
+    { name: '闭环服务', ids: ['risks', 'timelines', 'refund-applications', 'after-sales', 'smart-services', 'service-reports', 'users'] }
+]
+
+collapsedGroups.value = moduleGroups.reduce((acc, group) => {
+    acc[group.name] = Boolean(group.collapsed)
+    return acc
+}, {})
+
+function modulesByIds(ids) {
+    return ids.map(id => modules.find(item => item.id === id)).filter(Boolean)
+}
+
 const moduleConfig = {
     users: {
-        columns: ['id', 'email', 'createTime', 'updateTime'],
-        editable: ['email', 'password'],
-        empty: { email: '', password: '123456' }
+        columns: ['id', 'username', 'email', 'nickname', 'phone', 'role', 'status', 'createTime', 'updateTime'],
+        editable: ['username', 'email', 'password', 'nickname', 'phone', 'role', 'status'],
+        empty: { username: '', email: '', password: '123456', nickname: '', phone: '', role: 'USER', status: 'ENABLED' }
     },
     'trip-plans': {
         columns: ['id', 'userId', 'title', 'startPlace', 'endPlace', 'sourceType', 'createTime'],
@@ -53,6 +84,41 @@ const moduleConfig = {
         editable: ['userId', 'tripPlanId', 'title', 'startPlace', 'endPlace', 'reportSummary', 'reportContent', 'sourceType'],
         empty: { userId: '', tripPlanId: null, title: '', startPlace: '', endPlace: '', reportSummary: '', reportContent: '', sourceType: 'ADMIN' }
     },
+    orders: {
+        columns: ['id', 'orderNo', 'userId', 'orderType', 'productName', 'totalAmount', 'status', 'createTime'],
+        editable: [],
+        empty: null
+    },
+    hotels: {
+        columns: ['id', 'name', 'city', 'address', 'starLevel', 'score', 'minPrice', 'tags'],
+        editable: [],
+        empty: null
+    },
+    traffic: {
+        columns: ['id', 'type', 'startPlace', 'endPlace', 'departTime', 'arriveTime', 'price', 'carrierName', 'remainCount'],
+        editable: [],
+        empty: null
+    },
+    risks: {
+        columns: ['level', 'type', 'title', 'content', 'suggestion'],
+        editable: [],
+        empty: null
+    },
+    timelines: {
+        columns: ['id', 'userId', 'tripPlanId', 'stage', 'serviceType', 'title', 'triggerTime', 'status', 'createTime'],
+        editable: [],
+        empty: null
+    },
+    'after-sales': {
+        columns: ['id', 'userId', 'tripPlanId', 'orderId', 'serviceType', 'title', 'status', 'processor', 'processRemark', 'createTime'],
+        editable: ['status', 'processor', 'processRemark'],
+        empty: null
+    },
+    'refund-applications': {
+        columns: ['id', 'userId', 'orderId', 'title', 'status', 'processor', 'processRemark', 'createTime'],
+        editable: ['status', 'processor', 'processRemark'],
+        empty: null
+    },
     'chat-records': {
         columns: ['id', 'userId', 'sessionId', 'userMessage', 'aiResponse', 'model', 'createTime'],
         editable: ['userId', 'sessionId', 'userMessage', 'aiResponse', 'model'],
@@ -67,8 +133,36 @@ const moduleConfig = {
 
 const columnLabels = {
     id: 'ID',
+    orderNo: '订单号',
+    orderType: '订单类型',
+    productName: '产品名称',
+    totalAmount: '订单金额',
+    name: '名称',
+    address: '地址',
+    starLevel: '星级',
+    score: '评分',
+    minPrice: '最低价',
+    tags: '标签',
+    type: '类型',
+    departTime: '出发时间',
+    arriveTime: '到达时间',
+    carrierName: '车次/航班/线路',
+    remainCount: '余量',
+    level: '风险等级',
+    content: '内容',
+    suggestion: '建议',
+    stage: '阶段',
+    serviceType: '服务类型',
+    triggerTime: '触发时间',
+    processor: '处理人',
+    processRemark: '处理备注',
     email: '邮箱',
+    username: '账号',
+    nickname: '昵称',
+    phone: '手机号',
+    role: '角色',
     password: '密码',
+    status: '状态',
     createTime: '创建时间',
     updateTime: '更新时间',
     updatedAt: '更新时间',
@@ -107,14 +201,22 @@ const columnLabels = {
     note: '备注'
 }
 
+const orderModuleTypeMap = {
+    'orders-flight': 'FLIGHT',
+    'orders-train': 'TRAIN',
+    'orders-hotel': 'HOTEL',
+    'orders-cruise': 'CRUISE',
+    'orders-taxi': 'TAXI'
+}
+
 const currentModule = computed(() => modules.find(item => item.id === active.value))
-const config = computed(() => moduleConfig[active.value] || { columns: [], editable: [], empty: null })
+const config = computed(() => moduleConfig[resolveModuleConfigKey(active.value)] || { columns: [], editable: [], empty: null })
 const columns = computed(() => config.value.columns)
 const editableFields = computed(() => config.value.editable)
 
 const metricCards = computed(() => [
     { label: '用户总数', desc: '平台注册用户规模', value: dashboard.value.userCount || 0, icon: 'fa-users', tone: 'blue', target: 'users', badge: todayBadge('用户') },
-    { label: '历史方案', desc: '用户保存的出行方案', value: dashboard.value.tripPlanCount || 0, icon: 'fa-map', tone: 'green', target: 'trip-plans', badge: todayBadge('方案') },
+    { label: '实时订单', desc: '用户真实下单记录', value: dashboard.value.bookingOrderCount || 0, icon: 'fa-receipt', tone: 'green', target: 'orders', badge: todayBadge('订单') },
     { label: '咨询记录', desc: 'AI 咨询对话沉淀', value: dashboard.value.chatRecordCount || 0, icon: 'fa-comments', tone: 'violet', target: 'chat-records', badge: '持续积累' },
     { label: '路线记录', desc: '交通规划查询记录', value: dashboard.value.routeCount || 0, icon: 'fa-route', tone: 'cyan', target: 'routes', badge: '实时联动' },
     { label: '一站式服务', desc: '主动服务方案记录', value: dashboard.value.smartServiceCount || 0, icon: 'fa-clipboard-check', tone: 'orange', target: 'smart-services', badge: '闭环服务' },
@@ -125,7 +227,7 @@ const metricCards = computed(() => [
 
 const trendSeries = computed(() => [
     { name: '用户增长', values: normalizeTrend(dashboard.value.userTrend), color: '#2563eb' },
-    { name: '方案生成', values: normalizeTrend(dashboard.value.tripPlanTrend), color: '#16a34a' },
+    { name: '订单生成', values: normalizeTrend(dashboard.value.tripPlanTrend), color: '#16a34a' },
     { name: '报告生成', values: normalizeTrend(dashboard.value.reportTrend), color: '#7c3aed' }
 ])
 
@@ -177,12 +279,60 @@ async function loadModule(moduleId = active.value) {
             lastRefreshTime.value = nowText()
             rows.value = []
         } else {
-            rows.value = (await adminGet(moduleId)).data || []
+            const sourceRows = (await adminGet(resolveAdminPath(moduleId))).data || []
+            rows.value = filterModuleRows(moduleId, sourceRows)
         }
     } catch (error) {
         alert(error.message || '数据加载失败')
     } finally {
         loading.value = false
+    }
+}
+
+function resolveModuleConfigKey(moduleId) {
+    if (moduleId === 'refund-applications') return 'refund-applications'
+    return orderModuleTypeMap[moduleId] ? 'orders' : moduleId
+}
+
+function resolveAdminPath(moduleId) {
+    if (moduleId === 'refund-applications') return 'after-sales'
+    return orderModuleTypeMap[moduleId] ? 'orders' : moduleId
+}
+
+function filterModuleRows(moduleId, sourceRows) {
+    if (moduleId === 'refund-applications') {
+        return sourceRows.filter(row => String(row.serviceType || '').toUpperCase() === 'REFUND')
+    }
+    const orderType = orderModuleTypeMap[moduleId]
+    if (!orderType) return sourceRows
+    return sourceRows.filter(row => String(row.orderType || '').toUpperCase() === orderType)
+}
+
+function toggleAdminGroup(group) {
+    collapsedGroups.value[group.name] = !collapsedGroups.value[group.name]
+}
+
+function isGroupCollapsed(group) {
+    return Boolean(collapsedGroups.value[group.name])
+}
+
+function canReviewRefund(row) {
+    return active.value === 'refund-applications' && String(row?.status || '').toUpperCase() === 'PENDING'
+}
+
+async function reviewRefund(row, approved) {
+    const payload = {
+        ...row,
+        status: approved ? 'APPROVED' : 'REJECTED',
+        processor: 'admin',
+        processRemark: approved ? '已同意退款申请，进入模拟退款流程' : '已拒绝退款申请，请用户补充材料或联系客服'
+    }
+    try {
+        await adminUpdate('after-sales', row.id, payload)
+        await loadModule(active.value)
+        await refreshDashboardQuietly()
+    } catch (error) {
+        alert(error.message || '退款申请处理失败')
     }
 }
 
@@ -201,9 +351,9 @@ async function saveEditor() {
     try {
         const payload = normalizePayload(editor.value.data)
         if (editor.value.mode === 'create') {
-            await adminCreate(active.value, payload)
+            await adminCreate(resolveAdminPath(active.value), payload)
         } else {
-            await adminUpdate(active.value, payload.id, payload)
+            await adminUpdate(resolveAdminPath(active.value), payload.id, payload)
         }
         editor.value = null
         await loadModule(active.value)
@@ -219,7 +369,7 @@ async function removeRow(row) {
     console.log('前端删除 id = ', row?.id, typeof row?.id)
     if (!confirm(`确定删除「${row.title || row.email || row.id}」吗？删除会同步影响数据库。`)) return
     try {
-        await adminDelete(active.value, row.id)
+        await adminDelete(resolveAdminPath(active.value), row.id)
         await loadModule(active.value)
         await refreshDashboardQuietly()
     } catch (error) {
@@ -348,8 +498,8 @@ onMounted(() => {
 <template>
     <div v-if="!loggedIn" class="admin-login">
         <form class="login-card" @submit.prevent="login">
-            <div class="login-mark"><i class="fa-solid fa-plane-departure"></i></div>
-            <h1>智能出行管理端</h1>
+            <img class="login-mark" :src="logoUrl" alt="七维智行" />
+            <h1>七维智行管理端</h1>
             <p>运营数据、用户方案和服务记录统一管理</p>
             <label>管理员账号</label>
             <input v-model="loginForm.username" autocomplete="username" />
@@ -363,16 +513,24 @@ onMounted(() => {
     <div v-else class="admin-layout">
         <aside class="admin-sidebar">
             <div class="brand">
-                <div class="brand-icon"><i class="fa-solid fa-plane-departure"></i></div>
+                <img class="brand-icon" :src="logoUrl" alt="七维智行" />
                 <div>
-                    <strong>Travel Admin</strong>
-                    <small>智慧出行运营后台</small>
+                    <strong>七维智行 Admin</strong>
+                    <small>AI 智慧出行全过程服务平台</small>
                 </div>
             </div>
-            <button v-for="item in modules" :key="item.id" :class="{ active: active === item.id }" @click="loadModule(item.id)">
-                <i :class="['fa-solid', item.icon]"></i>
-                <span>{{ item.name }}</span>
-            </button>
+            <div class="admin-nav-scroll">
+                <section v-for="group in moduleGroups" :key="group.name" class="admin-nav-group">
+                    <button type="button" class="admin-group-trigger" :class="{ collapsed: isGroupCollapsed(group) }" @click="toggleAdminGroup(group)">
+                        <span>{{ group.name }}</span>
+                        <i class="fa-solid fa-chevron-down"></i>
+                    </button>
+                    <button v-for="item in modulesByIds(group.ids)" v-show="!isGroupCollapsed(group)" :key="item.id" class="admin-module-item" :class="{ active: active === item.id }" @click="loadModule(item.id)">
+                        <i :class="['fa-solid', item.icon]"></i>
+                        <span>{{ item.name }}</span>
+                    </button>
+                </section>
+            </div>
             <button class="logout" @click="logout">
                 <i class="fa-solid fa-right-from-bracket"></i>
                 <span>退出登录</span>
@@ -553,14 +711,14 @@ onMounted(() => {
                         </article>
 
                         <article class="data-card rank-card">
-                            <div class="data-card-head compact"><h2>热门出发地 Top5</h2></div>
-                            <div v-if="!entries(dashboard.popularStartPlaces).length" class="empty-state modern">暂无路线数据</div>
+                            <div class="data-card-head compact"><h2>订单出发地 Top5</h2><small>来自用户实时订单</small></div>
+                            <div v-if="!entries(dashboard.popularStartPlaces).length" class="empty-state modern">暂无订单数据</div>
                             <div v-for="item in entries(dashboard.popularStartPlaces).slice(0, 5)" :key="item[0]" class="rank-line modern"><span>{{ item[0] }}</span><b>{{ item[1] }}</b></div>
                         </article>
 
                         <article class="data-card rank-card">
-                            <div class="data-card-head compact"><h2>热门目的地 Top5</h2></div>
-                            <div v-if="!entries(dashboard.popularEndPlaces).length" class="empty-state modern">暂无路线数据</div>
+                            <div class="data-card-head compact"><h2>旅游城市订单 Top5</h2><small>来自用户实时订单</small></div>
+                            <div v-if="!entries(dashboard.popularEndPlaces).length" class="empty-state modern">暂无订单数据</div>
                             <div v-for="item in entries(dashboard.popularEndPlaces).slice(0, 5)" :key="item[0]" class="rank-line modern"><span>{{ item[0] }}</span><b>{{ item[1] }}</b></div>
                         </article>
                     </div>
@@ -593,7 +751,9 @@ onMounted(() => {
                         <tr v-for="row in pagedRows" :key="row.id">
                             <td v-for="col in columns" :key="col" :title="row[col]">{{ short(row[col]) }}</td>
                             <td class="actions">
-                                <button @click="openEdit(row)">编辑</button>
+                                <button v-if="canReviewRefund(row)" class="success" @click="reviewRefund(row, true)">同意退款</button>
+                                <button v-if="canReviewRefund(row)" class="warning" @click="reviewRefund(row, false)">拒绝退款</button>
+                                <button v-if="editableFields.length" @click="openEdit(row)">编辑</button>
                                 <button class="danger" @click="removeRow(row)">删除</button>
                             </td>
                         </tr>
@@ -658,10 +818,9 @@ onMounted(() => {
     width: 48px;
     height: 48px;
     border-radius: 14px;
-    display: grid;
-    place-items: center;
-    color: #fff;
-    background: linear-gradient(135deg, #2563eb, #06b6d4);
+    display: block;
+    object-fit: cover;
+    box-shadow: 0 10px 24px rgba(37, 99, 235, 0.18);
 }
 
 .login-card h1 {
@@ -752,6 +911,53 @@ textarea {
     box-shadow: 12px 0 30px rgba(15, 23, 42, 0.16);
 }
 
+.admin-nav-scroll {
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 3px;
+}
+
+.admin-nav-scroll::-webkit-scrollbar {
+    width: 6px;
+}
+
+.admin-nav-scroll::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.45);
+    border-radius: 999px;
+}
+
+.admin-nav-group {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 14px;
+}
+
+.admin-group-trigger {
+    height: 34px;
+    margin: 4px 2px 2px;
+    padding: 0 10px;
+    justify-content: space-between;
+    color: #cbd5e1;
+    background: rgba(15, 23, 42, 0.78);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.admin-group-trigger i {
+    margin-left: auto;
+    transition: transform .18s ease;
+}
+
+.admin-group-trigger.collapsed i {
+    transform: rotate(-90deg);
+}
+
+.admin-module-item {
+    margin-left: 8px;
+}
+
 .brand {
     display: flex;
     align-items: center;
@@ -763,9 +969,9 @@ textarea {
     width: 42px;
     height: 42px;
     border-radius: 13px;
-    display: grid;
-    place-items: center;
-    background: linear-gradient(135deg, #2563eb, #06b6d4);
+    display: block;
+    object-fit: cover;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.16);
 }
 
 .brand strong,
@@ -1107,6 +1313,18 @@ th {
 .actions .danger {
     color: #b42318;
     border-color: #fecaca;
+}
+
+.actions .success {
+    color: #047857;
+    border-color: #a7f3d0;
+    background: #ecfdf5;
+}
+
+.actions .warning {
+    color: #b45309;
+    border-color: #fed7aa;
+    background: #fff7ed;
 }
 
 .pagination {

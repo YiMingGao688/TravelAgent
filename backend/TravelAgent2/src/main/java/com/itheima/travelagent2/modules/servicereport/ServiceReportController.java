@@ -18,6 +18,10 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/service-report")
+/**
+ * 出行服务报告接口。
+ * 负责将一站式服务生成的报告真实落库，并支持历史报告列表、详情、更新和删除。
+ */
 public class ServiceReportController {
 
     private final TravelServiceReportService reportService;
@@ -27,6 +31,10 @@ public class ServiceReportController {
     }
 
     @PostMapping("/save")
+    /**
+     * 保存服务报告。
+     * 保存成功后，客户端“历史出行服务报告”和管理端报告管理都会查询到同一条数据库记录。
+     */
     public Result<TravelServiceReport> save(@RequestBody TravelServiceReportSaveDTO dto) {
         if (dto.getUserId() == null || dto.getUserId().isBlank()) {
             return Result.error(400, "userId 不能为空");
@@ -43,6 +51,10 @@ public class ServiceReportController {
     }
 
     @GetMapping("/list")
+    /**
+     * 按用户和关键词查询报告列表。
+     * keyword 用于标题、起终点或摘要搜索，空值时返回该用户全部报告。
+     */
     public Result<List<TravelServiceReport>> list(@RequestParam String userId,
                                                   @RequestParam(required = false) String keyword) {
         if (userId == null || userId.isBlank()) {
@@ -70,6 +82,10 @@ public class ServiceReportController {
     }
 
     @DeleteMapping("/{id}")
+    /**
+     * 删除服务报告。
+     * 这里直接调用 Service 删除，避免出现“页面删了但数据库还在”的假删除。
+     */
     public Result<String> delete(@PathVariable Long id) {
         System.out.println("后端收到删除 id = " + id);
         boolean removed = reportService.deleteById(id);

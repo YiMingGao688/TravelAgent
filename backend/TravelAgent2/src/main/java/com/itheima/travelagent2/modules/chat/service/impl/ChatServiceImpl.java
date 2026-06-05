@@ -19,6 +19,10 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
+/**
+ * AI 咨询核心服务。
+ * 这里串起“会话上下文 TripContext -> 历史聊天摘要 -> 云端大模型流式输出 -> 聊天记录落库”的闭环。
+ */
 public class ChatServiceImpl implements ChatService {
     private static final int MAX_CONTEXT_RECORDS = 12;
     private static final int MAX_CONTEXT_CHARS = 8000;
@@ -69,6 +73,12 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public Flux<ChatStreamEvent> streamChatEvents(ChatRequestDTO dto) {
+        /*
+         * 使用 Flux.create 包装云端模型的回调式流式输出：
+         * 1. 先按 sessionId 合并 TripContext，并把最新结构化信息推给前端；
+         * 2. 再把画像、当前上下文和最近若干轮历史拼入 prompt；
+         * 3. 最后把完整回复和用户消息保存到 chat_record，保证下轮对话可继续记忆。
+         */
         return Flux.create(sink -> {
             try {
                 String sessionId = getOrCreateSessionId(dto);
@@ -143,6 +153,10 @@ public class ChatServiceImpl implements ChatService {
     }
 
     private String buildPromptWithProfile(ChatRequestDTO dto, TripContext tripContext) {
+        /*
+         * 用户画像只作为兜底默认值，不能覆盖当前会话已确认的 TripContext。
+         * 这能避免用户把“美食”改成“散步”后，下一轮又被画像里的旧偏好改回去。
+         */
         UserProfile profile = dto.getUserId() == null ? null : getProfile(dto.getUserId());
 
         String city = choose(dto.getCity(), profile == null ? null : profile.getCity(), "未提供");

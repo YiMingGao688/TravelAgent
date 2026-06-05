@@ -17,6 +17,10 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/route")
+/**
+ * 交通规划接口层。
+ * 前端提交起点、终点、偏好和可选坐标后，由 RouteService 对接高德路线、天气和 AI 推荐理由。
+ */
 public class RouteController {
 
     private final RouteService routeService;
@@ -26,6 +30,10 @@ public class RouteController {
     }
 
     @PostMapping("/query")
+    /**
+     * 查询路线规划结果。
+     * 返回内容包含起终点坐标、adcode、天气、路线列表和服务能力，前端据此绘制地图与右侧方案。
+     */
     public Result<RoutePlanResponseDTO> queryRoutes(@RequestBody RouteQueryDTO dto) {
         if (dto.getStartPoint() == null || dto.getStartPoint().isBlank()) {
             return Result.error(400, "Start point is required");
@@ -51,6 +59,10 @@ public class RouteController {
     }
 
     @DeleteMapping("/{id}")
+    /**
+     * 删除路线记录。
+     * 这里必须真实调用数据库删除，不能只返回成功，否则管理端/客户端会出现数据不同步。
+     */
     public Result<String> delete(@PathVariable Long id) {
         System.out.println("后端收到删除 id = " + id);
         boolean removed = routeService.deleteById(id);

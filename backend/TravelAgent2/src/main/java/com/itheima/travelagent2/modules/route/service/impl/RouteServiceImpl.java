@@ -17,12 +17,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
 @Service
+/**
+ * 交通规划业务服务。
+ * 负责把前端输入的地点解析成坐标，调用高德路线/天气接口，再用 AI 补充中文推荐理由并落库。
+ */
 public class RouteServiceImpl extends ServiceImpl<RouteMapper, Route> implements RouteService {
 
     private static final String GEOCODE_URL = "https://restapi.amap.com/v3/geocode/geo";
@@ -49,19 +56,28 @@ public class RouteServiceImpl extends ServiceImpl<RouteMapper, Route> implements
 
     @Override
     public RoutePlanResponseDTO queryRoutes(RouteQueryDTO dto) {
+        /*
+         * 路线规划主流程：
+         * 1. 校验起终点；
+         * 2. 优先使用前端候选地点坐标，缺失时再调用高德地理编码；
+         * 3. 查询起终点天气，天气失败不阻断路线；
+         * 4. 生成多种路线并保存，方便历史/管理端查询。
+         */
         validate(dto);
 
         LocationInfo originInfo = resolveLocation(dto, true);
         LocationInfo destinationInfo = resolveLocation(dto, false);
+        List<LocationInfo> waypointInfos = resolveWaypoints(dto.getWaypoints());
+        String waypointLocations = joinLocations(waypointInfos);
         WeatherInfo startWeather = queryWeather(originInfo.getAdcode());
         WeatherInfo endWeather = queryWeather(destinationInfo.getAdcode());
 
         List<Route> routes = new ArrayList<>();
-        routes.add(queryDriving(dto, originInfo.getLocation(), destinationInfo.getLocation(), "SMART",
+        routes.add(queryDriving(dto, originInfo.getLocation(), destinationInfo.getLocation(), waypointLocations, "SMART",
                 "\u667a\u80fd\u63a8\u8350\u65b9\u6848", "10"));
-        routes.add(queryDriving(dto, originInfo.getLocation(), destinationInfo.getLocation(), "FAST",
+        routes.add(queryDriving(dto, originInfo.getLocation(), destinationInfo.getLocation(), waypointLocations, "FAST",
                 "\u5feb\u901f\u51fa\u884c\u65b9\u6848", "0"));
-        routes.add(queryDriving(dto, originInfo.getLocation(), destinationInfo.getLocation(), "ECO",
+        routes.add(queryDriving(dto, originInfo.getLocation(), destinationInfo.getLocation(), waypointLocations, "ECO",
                 "\u7ecf\u6d4e\u51fa\u884c\u65b9\u6848", "1"));
 
         enrichRoutesWithAi(dto, originInfo, destinationInfo, startWeather, endWeather, routes);
@@ -73,6 +89,7 @@ public class RouteServiceImpl extends ServiceImpl<RouteMapper, Route> implements
         RoutePlanResponseDTO response = new RoutePlanResponseDTO();
         response.setStartLocation(originInfo);
         response.setEndLocation(destinationInfo);
+        response.setWaypointLocations(waypointInfos);
         response.setStartWeather(startWeather);
         response.setEndWeather(endWeather);
         response.setRoutes(routes);
@@ -85,7 +102,34 @@ public class RouteServiceImpl extends ServiceImpl<RouteMapper, Route> implements
         return response;
     }
 
+    private List<LocationInfo> resolveWaypoints(List<String> waypoints) {
+        List<LocationInfo> locations = new ArrayList<>();
+        if (waypoints == null) {
+            return locations;
+        }
+        for (String waypoint : waypoints) {
+            if (notBlank(waypoint)) {
+                LocationInfo resolved = geocode(waypoint.trim());
+                System.out.println("[AMAP] geocode waypoint=" + waypoint.trim() + " result=" + resolved);
+                locations.add(resolved);
+            }
+        }
+        return locations;
+    }
+
+    private String joinLocations(List<LocationInfo> waypointInfos) {
+        if (waypointInfos == null || waypointInfos.isEmpty()) {
+            return "";
+        }
+        return waypointInfos.stream()
+                .map(LocationInfo::getLocation)
+                .filter(this::notBlank)
+                .reduce((left, right) -> left + ";" + right)
+                .orElse("");
+    }
+
     private LocationInfo resolveLocation(RouteQueryDTO dto, boolean start) {
+        // 前端如果已经从高德候选列表拿到坐标，直接信任该坐标，减少后端 geocode 失败概率。
         String location = start ? dto.getStartLocation() : dto.getEndLocation();
         String point = start ? dto.getStartPoint() : dto.getEndPoint();
         if (notBlank(location) && location.contains(",")) {
@@ -105,7 +149,10 @@ public class RouteServiceImpl extends ServiceImpl<RouteMapper, Route> implements
             }
             return info;
         }
-        return geocode(point);
+        LocationInfo resolved = geocode(point);
+        System.out.println("[AMAP] geocode " + (start ? "startPlace=" : "endPlace=")
+                + point + " result=" + resolved);
+        return resolved;
     }
 
     @Override
@@ -126,19 +173,22 @@ public class RouteServiceImpl extends ServiceImpl<RouteMapper, Route> implements
     }
 
     private LocationInfo geocode(String address) {
+        // 高德地理编码偶尔会返回 ENGINE_RESPONSE_DATA_ERROR，因此这里保留 POI、内置城市、行政区划多级兜底。
         String cleanAddress = address == null ? "" : address.trim();
         String response = "";
         try {
-            String url = UriComponentsBuilder.fromHttpUrl(GEOCODE_URL)
-                    .queryParam("key", amapKey)
-                    .queryParam("address", cleanAddress)
-                    .queryParam("output", "JSON")
-                    .build()
-                    .encode()
-                    .toUriString();
+            LocationInfo poiFirst = searchPoi(cleanAddress, "");
+            if (poiFirst != null) {
+                return poiFirst;
+            }
+            String url = GEOCODE_URL
+                    + "?key=" + enc(amapKey)
+                    + "&address=" + enc(cleanAddress)
+                    + "&city=" + enc(inferCity(cleanAddress))
+                    + "&output=JSON";
 
-            response = restTemplate.getForObject(url, String.class);
-            System.out.println("AMap geocode response for [" + cleanAddress + "]: " + response);
+            response = restTemplate.getForObject(URI.create(url), String.class);
+            System.out.println("[AMAP] geocode address=" + cleanAddress + " result=" + response);
 
             JsonNode root = objectMapper.readTree(response);
             String status = root.path("status").asText();
@@ -256,21 +306,20 @@ public class RouteServiceImpl extends ServiceImpl<RouteMapper, Route> implements
             return null;
         }
         try {
-            String url = UriComponentsBuilder.fromHttpUrl(PLACE_TEXT_URL)
-                    .queryParam("key", amapKey)
-                    .queryParam("keywords", address.trim())
-                    .queryParam("city", inferCity(address))
-                    .queryParam("citylimit", false)
-                    .queryParam("offset", 1)
-                    .queryParam("page", 1)
-                    .queryParam("extensions", "base")
-                    .queryParam("output", "JSON")
-                    .build()
-                    .encode()
-                    .toUriString();
+            String city = inferCity(address);
+            String url = PLACE_TEXT_URL
+                    + "?key=" + enc(amapKey)
+                    + "&keywords=" + enc(address.trim())
+                    + "&city=" + enc(city)
+                    + "&citylimit=" + (notBlank(city) ? "true" : "false")
+                    + "&offset=1"
+                    + "&page=1"
+                    + "&extensions=base"
+                    + "&output=JSON";
+            System.out.println("[AMAP] poi url=" + url.replace(amapKey, "***"));
 
-            String response = restTemplate.getForObject(url, String.class);
-            System.out.println("AMap POI response for [" + address + "]: " + response);
+            String response = restTemplate.getForObject(URI.create(url), String.class);
+            System.out.println("[AMAP] poi address=" + address + " result=" + response);
 
             JsonNode root = objectMapper.readTree(response);
             JsonNode pois = root.path("pois");
@@ -293,6 +342,18 @@ public class RouteServiceImpl extends ServiceImpl<RouteMapper, Route> implements
             info.setProvince(text(first, "pname"));
             info.setCity(text(first, "cityname"));
             info.setDistrict(text(first, "adname"));
+            if (!notBlank(info.getAdcode())) {
+                LocationInfo reverseInfo = reverseGeocode(location, info.getName());
+                if (reverseInfo != null && notBlank(reverseInfo.getAdcode())) {
+                    info.setAdcode(reverseInfo.getAdcode());
+                    info.setFormattedAddress(notBlank(reverseInfo.getFormattedAddress())
+                            ? reverseInfo.getFormattedAddress()
+                            : info.getFormattedAddress());
+                    info.setProvince(reverseInfo.getProvince());
+                    info.setCity(reverseInfo.getCity());
+                    info.setDistrict(reverseInfo.getDistrict());
+                }
+            }
             return info;
         } catch (Exception e) {
             System.out.println("AMap POI query failed for [" + address + "]: " + e.getMessage());
@@ -311,8 +372,8 @@ public class RouteServiceImpl extends ServiceImpl<RouteMapper, Route> implements
                     .encode()
                     .toUriString();
 
-            String response = restTemplate.getForObject(url, String.class);
-            System.out.println("AMap regeo response for [" + location + "]: " + response);
+            String response = restTemplate.getForObject(URI.create(url), String.class);
+            System.out.println("[AMAP] regeo location=" + location + " result=" + response);
 
             JsonNode root = objectMapper.readTree(response);
             if (!"1".equals(root.path("status").asText())) {
@@ -354,6 +415,9 @@ public class RouteServiceImpl extends ServiceImpl<RouteMapper, Route> implements
         if (normalized.contains("\u676d\u5dde")) {
             return "\u676d\u5dde";
         }
+        if (normalized.contains("\u897f\u6e56") || normalized.contains("\u7075\u9690")) {
+            return "\u676d\u5dde";
+        }
         if (normalized.contains("\u82cf\u5dde")) {
             return "\u82cf\u5dde";
         }
@@ -372,15 +436,12 @@ public class RouteServiceImpl extends ServiceImpl<RouteMapper, Route> implements
 
         for (String keyword : districtKeywords(address)) {
             try {
-            String url = UriComponentsBuilder.fromHttpUrl(DISTRICT_URL)
-                    .queryParam("key", amapKey)
-                        .queryParam("keywords", keyword)
-                    .queryParam("subdistrict", 0)
-                    .queryParam("extensions", "base")
-                    .queryParam("output", "JSON")
-                    .build()
-                    .encode()
-                    .toUriString();
+            String url = DISTRICT_URL
+                    + "?key=" + enc(amapKey)
+                    + "&keywords=" + enc(keyword)
+                    + "&subdistrict=0"
+                    + "&extensions=base"
+                    + "&output=JSON";
 
             String response = restTemplate.getForObject(url, String.class);
                 lastDistrictResponse = response;
@@ -552,8 +613,7 @@ public class RouteServiceImpl extends ServiceImpl<RouteMapper, Route> implements
                     .toUriString();
 
             String response = restTemplate.getForObject(url, String.class);
-            System.out.println("AMap weather response for [" + adcode + "] with key suffix ["
-                    + key.substring(Math.max(0, key.length() - 6)) + "]: " + response);
+            System.out.println("[AMAP] weather result=" + response);
 
             JsonNode root = objectMapper.readTree(response);
             JsonNode lives = root.path("lives");
@@ -674,18 +734,20 @@ public class RouteServiceImpl extends ServiceImpl<RouteMapper, Route> implements
         return "";
     }
 
-    private Route queryDriving(RouteQueryDTO dto, String origin, String destination, String type,
+    private Route queryDriving(RouteQueryDTO dto, String origin, String destination, String waypoints, String type,
                                String name, String strategy) {
         try {
-            String url = UriComponentsBuilder.fromHttpUrl(DRIVING_URL)
+            UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(DRIVING_URL)
                     .queryParam("key", amapKey)
                     .queryParam("origin", origin)
                     .queryParam("destination", destination)
                     .queryParam("strategy", strategy)
                     .queryParam("extensions", "base")
-                    .queryParam("output", "JSON")
-                    .build(false)
-                    .toUriString();
+                    .queryParam("output", "JSON");
+            if (notBlank(waypoints)) {
+                builder.queryParam("waypoints", waypoints);
+            }
+            String url = builder.build(false).toUriString();
 
             String response = restTemplate.getForObject(url, String.class);
             JsonNode root = objectMapper.readTree(response);
@@ -705,6 +767,10 @@ public class RouteServiceImpl extends ServiceImpl<RouteMapper, Route> implements
             int durationMin = Math.max(1, (int) Math.ceil(path.path("duration").asDouble(0D) / 60D));
             double cost = path.path("tolls").asDouble(0D);
             String trafficLights = path.path("traffic_lights").asText("");
+            System.out.println("[AMAP] route planning result distance=" + distanceKm
+                    + ", duration=" + durationMin
+                    + ", waypoints=" + waypoints
+                    + ", raw=" + response);
 
             Route route = new Route();
             route.setUserId(dto.getUserId());
@@ -767,5 +833,9 @@ public class RouteServiceImpl extends ServiceImpl<RouteMapper, Route> implements
 
     private double round(double value) {
         return Math.round(value * 10.0D) / 10.0D;
+    }
+
+    private String enc(String value) {
+        return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8);
     }
 }

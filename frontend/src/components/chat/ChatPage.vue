@@ -66,6 +66,7 @@ const displayMessages = computed(() => messages.value.map(msg => {
 }))
 
 async function switchMenu(id) {
+    // 主工作台模块切换。交通规划含地图实例，离开时先销毁，进入时再初始化，避免地图容器重复挂载。
     if (['history', 'reports'].includes(id) && !requireLogin('查看历史记录需要先登录。')) {
         return
     }
@@ -83,6 +84,7 @@ async function switchMenu(id) {
 }
 
 async function handleSendMessage(userMsg) {
+    // AI 咨询入口：普通文本走流式聊天；图片消息走图片识别接口，保持两个链路互不干扰。
     if (!requireLogin('登录后可继续使用 AI 出行规划服务。')) {
         return
     }
@@ -134,6 +136,7 @@ function openProfile() {
 }
 
 function requireLogin(message) {
+    // 首页允许先进入系统，但涉及 userId 的操作必须在这里统一拦截并弹登录框。
     if (props.isLoggedIn || sessionStorage.getItem('loginUser')) {
         return true
     }
@@ -157,6 +160,7 @@ async function handleProfileSave(savedProfile) {
 }
 
 async function handleSavePlan(msg) {
+    // 保存历史方案必须使用当前最新结构化 TripContext，保证“导入交通/我的行程”拿到一致数据。
     if (!requireLogin('登录后可保存出行方案，并在历史方案中继续查看。')) {
         return
     }
@@ -178,12 +182,14 @@ async function handleSavePlan(msg) {
 }
 
 async function loadTripPlans() {
+    // 历史方案列表以后端数据库为准；新增/删除后都重新调用该方法刷新页面。
     const userId = sessionStorage.getItem('loginUser')
     if (!userId) return
     historyList.value = await listTripPlans(userId)
 }
 
 async function handleDeleteHistory(index) {
+    // 删除走后端真实 DELETE 接口。这里不做前端假删除，成功或失败后都重新拉取数据库列表。
     const deleteId = index === -1 ? 'ALL' : historyList.value[index]?.id
     console.log('前端删除 id = ', deleteId, typeof deleteId)
     try {
@@ -208,6 +214,7 @@ async function handleDeleteHistory(index) {
 }
 
 function importToTransit(source) {
+    // 将 AI 方案/历史方案的起终点和偏好传给交通规划模块，并切换到对应页面。
     const plan = normalizePlan(source)
     route.value = {
         from: plan.startPlace || route.value.from,
@@ -596,7 +603,7 @@ onBeforeUnmount(() => {
                     </button>
                     <div class="status-badge">
                         <i class="fa-solid fa-circle"></i>
-                        <span>{{ activeMenu === 'smart' ? '出行服务已准备' : 'AI 出行助手在线' }}</span>
+                        <span>{{ activeMenu === 'smart' ? '出行服务已准备' : '七维智行助手在线' }}</span>
                     </div>
                 </div>
             </header>

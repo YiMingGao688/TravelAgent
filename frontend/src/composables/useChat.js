@@ -5,7 +5,7 @@ import { getCurrentTime } from '../utils/time.js'
 const welcomeMessage = () => ({
     role: 'ai',
     isWelcome: true,
-    content: '您好，我是您的智能出行助手。您可以告诉我目的地、出行时间、预算和偏好，我会结合您的出行偏好生成可执行的出行方案。',
+    content: '您好，我是七维智行助手。您可以告诉我目的地、出行时间、预算和偏好，我会结合您的出行偏好生成可执行的出行方案。',
     time: getCurrentTime()
 })
 

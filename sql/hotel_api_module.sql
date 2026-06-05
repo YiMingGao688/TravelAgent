@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS hotel_order (
+    id BIGINT NOT NULL PRIMARY KEY,
+    user_id VARCHAR(80) NOT NULL,
+    hotel_id VARCHAR(120) DEFAULT NULL,
+    hotel_name VARCHAR(180) DEFAULT NULL,
+    city VARCHAR(80) DEFAULT NULL,
+    address VARCHAR(255) DEFAULT NULL,
+    check_in_date DATE DEFAULT NULL,
+    check_out_date DATE DEFAULT NULL,
+    adults INT DEFAULT 2,
+    children INT DEFAULT 0,
+    rooms INT DEFAULT 1,
+    room_type VARCHAR(120) DEFAULT NULL,
+    price DECIMAL(10,2) DEFAULT 0,
+    status VARCHAR(32) DEFAULT 'PENDING',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_hotel_order_user (user_id),
+    INDEX idx_hotel_order_status (status),
+    INDEX idx_hotel_order_create_time (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
