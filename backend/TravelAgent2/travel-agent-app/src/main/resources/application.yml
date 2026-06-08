@@ -1,0 +1,47 @@
+﻿server:
+  port: 8081
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/travel_agent
+    username: root
+    password: 123456
+
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+
+  ai:
+    zhipu:
+      api-key: ${ZHIPU_API_KEY:}
+      base-url: https://open.bigmodel.cn/api/paas/v4/chat/completions
+      model: glm-4-flash
+      temperature: 0.2
+      connect-timeout-ms: 10000
+      read-timeout-ms: 60000
+
+integration:
+  amap-key: ${AMAP_KEY:}
+  weather-key: ${AMAP_WEATHER_KEY:${AMAP_KEY:}}
+  payment-demo-key: ${PAYMENT_DEMO_KEY:placeholder}
+
+mybatis-plus:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: assign_id
+amap:
+  key: ${AMAP_KEY:}
+
+hotel:
+  api:
+    # 当前酒店搜索主路径为高德 POI。HotelApiClient 仅作为后续商用酒店供应商扩展层保留。
+    provider: disabled
+    amadeus:
+      base-url: https://test.api.amadeus.com
+      client-id: ${AMADEUS_CLIENT_ID:}
+      client-secret: ${AMADEUS_CLIENT_SECRET:}

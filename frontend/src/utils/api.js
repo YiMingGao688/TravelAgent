@@ -50,7 +50,6 @@ export async function logoutUser() {
  */
 function handleAxiosResult(response) {
     const result = response.data
-    console.log('删除接口返回：', result)
     if (result?.code && result.code !== 200 && result.code !== 1 && result.success !== true) {
         throw new Error(result.message || result.msg || '删除失败')
     }
@@ -117,13 +116,6 @@ export async function saveTripPlan(plan) {
     })
 }
 
-export async function createTripPlan(plan) {
-    return request('/api/trip', {
-        method: 'POST',
-        body: JSON.stringify(plan)
-    })
-}
-
 export async function listTripPlans(userId) {
     const result = await request(`/api/trip/list?userId=${encodeURIComponent(userId)}`)
     return result.data || []
@@ -131,19 +123,6 @@ export async function listTripPlans(userId) {
 
 export async function deleteTripPlan(id) {
     return handleAxiosResult(await axios.delete(`/api/trip/${id}`))
-}
-
-export async function getTripPlan(id) {
-    const result = await request(`/api/trip/${id}`)
-    return result.data
-}
-
-export async function updateTripPlan(id, payload) {
-    const result = await request(`/api/trip/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(payload)
-    })
-    return result.data
 }
 
 export async function queryRoutes(payload) {
@@ -192,13 +171,6 @@ export async function adminUpdate(path, id, payload) {
     })
 }
 
-export async function adminUpdateUser(id, payload) {
-    return request(`/api/admin/users/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(payload)
-    })
-}
-
 export async function generateSmartService(payload) {
     return request('/api/smart-service/generate', {
         method: 'POST',
@@ -218,21 +190,9 @@ export async function listSmartServices(userId) {
     return result.data || []
 }
 
-export async function deleteSmartService(id) {
-    return handleAxiosResult(await axios.delete(`/api/smart-service/${id}`))
-}
-
 export async function saveServiceReport(payload) {
     // 一站式服务报告保存到数据库，历史出行服务报告页面会从对应接口重新拉取。
     const result = await request('/api/service-report/save', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-    })
-    return result.data
-}
-
-export async function createServiceReport(payload) {
-    const result = await request('/api/service-report', {
         method: 'POST',
         body: JSON.stringify(payload)
     })
@@ -251,14 +211,6 @@ export async function getServiceReport(id) {
 
 export async function deleteServiceReport(id) {
     return handleAxiosResult(await axios.delete(`/api/service-report/${id}`))
-}
-
-export async function updateServiceReport(id, payload) {
-    const result = await request(`/api/service-report/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(payload)
-    })
-    return result.data
 }
 
 export async function searchHotels(params = {}) {

@@ -124,7 +124,6 @@ export function useChat(aiChatRef) {
                         try {
                             pendingTripContext = JSON.parse(eventData)
                             currentTripContext.value = pendingTripContext
-                            console.log('后端返回 tripContext = ', pendingTripContext)
                             if (index !== -1) {
                                 messages.value[index].tripContext = pendingTripContext
                                 messages.value[index].structuredPlan = toStructuredPlan(pendingTripContext, userMsg.content)
@@ -233,7 +232,6 @@ export function useChat(aiChatRef) {
         if (!latestAi) return
         latestAi.tripContext = currentTripContext.value
         latestAi.structuredPlan = toStructuredPlan(currentTripContext.value, latestAi.rawQuestion)
-        console.log('当前展示 identifiedTravelInfo = ', latestAi.structuredPlan)
     }
 
     function syncTripContextFromProfile(savedProfile = {}, previousProfile = {}) {
@@ -250,7 +248,6 @@ export function useChat(aiChatRef) {
         }
         currentTripContext.value = next
         attachContextToLatestAi()
-        console.log('当前展示 identifiedTravelInfo = ', toStructuredPlan(next))
     }
 
     function toStructuredPlan(context, rawQuestion = '') {

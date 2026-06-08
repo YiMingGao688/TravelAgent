@@ -366,7 +366,6 @@ async function saveEditor() {
 }
 
 async function removeRow(row) {
-    console.log('前端删除 id = ', row?.id, typeof row?.id)
     if (!confirm(`确定删除「${row.title || row.email || row.id}」吗？删除会同步影响数据库。`)) return
     try {
         await adminDelete(resolveAdminPath(active.value), row.id)

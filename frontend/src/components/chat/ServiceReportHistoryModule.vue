@@ -36,7 +36,6 @@ async function openDetail(id) {
 }
 
 async function removeReport(item) {
-    console.log('前端删除 id = ', item?.id, typeof item?.id)
     if (!confirm(`确定删除「${item.title || '这份报告'}」吗？删除后数据库记录会同步删除。`)) return
     try {
         await deleteServiceReport(item.id)

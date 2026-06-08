@@ -10,7 +10,9 @@ import AppSidebar from '../common/AppSidebar.vue'
 import ProfileModal from '../common/ProfileModal.vue'
 import { useChat, useProfile, useTheme } from '../../composables/index.js'
 import { getCurrentTime } from '../../utils/time'
-import { deleteTripPlan, listTripPlans, saveTripPlan } from '../../utils/api.js'
+import { uploadChatImage } from '../../api/aiApi.js'
+import { deleteTripPlan, listTripPlans, saveTripPlan } from '../../api/tripApi.js'
+import { useChatPageState } from '../../views/chat/composables/useChatPageState.js'
 
 const props = defineProps({
     isLoggedIn: { type: Boolean, default: false },
@@ -36,6 +38,12 @@ const imageUploading = ref(false)
 const { messages, aiThinking, aiTyping, sessionId, currentTripContext, syncTripContextFromProfile, sendMessage, interrupt, startNewChat, init } = useChat(aiChatRef)
 const { profile, loadProfile, saveProfile } = useProfile()
 const { initTheme, toggleTheme } = useTheme()
+const { buildPlanPayload, contextToStructuredPlan, normalizePlan, extractStructuredPlan, extractDays } = useChatPageState({
+    messages,
+    profile,
+    currentTripContext,
+    sessionId
+})
 
 watch(() => props.loginUser, value => {
     userName.value = value || ''
@@ -57,7 +65,6 @@ const currentMenuName = computed(() => ({
 const displayMessages = computed(() => messages.value.map(msg => {
     if (msg.role !== 'ai' || msg.isWelcome || msg.skipStructure) return msg
     const structuredPlan = msg.structuredPlan || contextToStructuredPlan(msg.tripContext || currentTripContext.value, msg.rawQuestion) || extractStructuredPlan(msg)
-    console.log('当前展示 identifiedTravelInfo = ', structuredPlan)
     return {
         ...msg,
         structuredPlan,
@@ -96,16 +103,13 @@ async function handleSendMessage(userMsg) {
     messages.value.push(userMsg)
     imageUploading.value = true
     try {
-        const formData = new FormData()
-        formData.append('file', userMsg.imageFile)
-        formData.append('text', userMsg.content || '请分析这张图片，并结合出行场景给出建议。')
-        formData.append('userId', sessionStorage.getItem('loginUser') || 'guest')
-        formData.append('sessionId', sessionId.value || Date.now().toString())
-        formData.append('model', 'zhipu-cloud')
-
-        const res = await fetch('/api/image/chat', { method: 'POST', body: formData })
-        if (!res.ok) throw new Error('上传失败')
-        const data = await res.json()
+        const data = await uploadChatImage({
+            file: userMsg.imageFile,
+            text: userMsg.content || '请分析这张图片，并结合出行场景给出建议。',
+            userId: sessionStorage.getItem('loginUser') || 'guest',
+            sessionId: sessionId.value || Date.now().toString(),
+            model: 'zhipu-cloud'
+        })
         messages.value.push({ role: 'ai', content: data.data || '图片识别完成', time: getCurrentTime(), isPlan: false })
     } catch (error) {
         messages.value.push({ role: 'ai', content: `图片识别失败：${error.message}`, time: getCurrentTime(), isPlan: false })
@@ -191,7 +195,6 @@ async function loadTripPlans() {
 async function handleDeleteHistory(index) {
     // 删除走后端真实 DELETE 接口。这里不做前端假删除，成功或失败后都重新拉取数据库列表。
     const deleteId = index === -1 ? 'ALL' : historyList.value[index]?.id
-    console.log('前端删除 id = ', deleteId, typeof deleteId)
     try {
         if (index === -1) {
             if (!historyList.value.length || !confirm('确定清空全部历史方案吗？删除后数据库记录也会同步删除。')) return
@@ -291,260 +294,6 @@ function importRouteToCustom() {
             : ''
     }
     activeMenu.value = 'custom'
-}
-
-function buildPlanPayload(msg) {
-    const text = msg.content || ''
-    const structured = msg.structuredPlan || contextToStructuredPlan(msg.tripContext || currentTripContext.value, msg.rawQuestion) || extractStructuredPlan(msg)
-    return {
-        userId: sessionStorage.getItem('loginUser') || 'guest',
-        sessionId: msg.sessionId || sessionId.value,
-        title: structured.startPlace && structured.endPlace ? `${structured.startPlace} 到 ${structured.endPlace} 出行方案` : 'AI 智能出行方案',
-        startPlace: structured.startPlace,
-        endPlace: structured.endPlace,
-        content: text,
-        rawQuestion: structured.rawQuestion,
-        sourceType: 'AI_CHAT',
-        travelPreference: structured.preference || '',
-        budget: structured.budget || '',
-        days: Number(structured.days) || null
-    }
-}
-
-function contextToStructuredPlan(context, rawQuestion = '') {
-    if (!context) return null
-    return {
-        startPlace: context.startPlace || '',
-        endPlace: context.endPlace || '',
-        scenario: context.sceneType || '',
-        days: context.days || null,
-        preference: context.preference || '',
-        budget: context.budget || '',
-        companions: context.companionType || '',
-        transportMode: context.transportMode || '',
-        pacePreference: context.pacePreference || '',
-        walkingPreference: context.walkingPreference || '',
-        hotelPreference: context.hotelPreference || '',
-        foodPreference: context.foodPreference || '',
-        specialNeeds: context.specialNeeds || '',
-        rawQuestion,
-        hasUsefulFields: Boolean(context.startPlace || context.endPlace || context.days || context.budget || context.preference || context.companionType || context.sceneType)
-    }
-}
-
-function normalizePlan(source) {
-    if (source?.content && source?.role === 'ai') {
-        return buildPlanPayload(source)
-    }
-    return source || {}
-}
-
-function legacyExtractStructuredPlan(msg) {
-    const aiText = String(msg?.content || '')
-    const rawQuestion = String(msg?.rawQuestion || [...messages.value].reverse().find(item => item.role === 'user')?.content || '')
-    const text = `${rawQuestion}\n${aiText}`
-    const places = extractPlaces(rawQuestion, aiText)
-    const days = extractDays(text)
-    const budget = extractBudget(text)
-    const preference = extractPreference(text)
-    const companions = extractCompanions(text)
-    const scenario = extractScenario(text)
-    return {
-        startPlace: places.startPlace,
-        endPlace: places.endPlace,
-        scenario,
-        days,
-        preference,
-        budget,
-        companions,
-        rawQuestion,
-        hasUsefulFields: Boolean(places.startPlace || places.endPlace || days || budget || preference || companions || scenario)
-    }
-}
-
-function legacyExtractPlaces(question, answer) {
-    const source = `${question}\n${answer}`
-    const explicitPatterns = [
-        /(?:从|自)\s*([^，。；;,.!?、\n]{2,24})\s*(?:出发)?(?:到|去|前往|抵达)\s*([^，。；;,.!?、\n]{2,24})/,
-        /(?:起点|出发地)[:：]\s*([^，。；;,.!?、\n]{2,24})[\s\S]{0,120}(?:终点|目的地)[:：]\s*([^，。；;,.!?、\n]{2,24})/
-    ]
-    for (const pattern of explicitPatterns) {
-        const match = source.match(pattern)
-        if (match) {
-            return { startPlace: cleanPlace(match[1]), endPlace: cleanPlace(match[2]) }
-        }
-    }
-
-    const destinationPatterns = [
-        /(?:去|到|前往)\s*([^，。；;,.!?、\n]{2,20}?)(?:玩|旅游|出差|看展|游玩|旅行|两天|三天|[0-9一二三四五六七八九十]+天)/,
-        /目的地[:：]\s*([^，。；;,.!?、\n]{2,20})/
-    ]
-    let endPlace = ''
-    for (const pattern of destinationPatterns) {
-        const match = source.match(pattern)
-        if (match) {
-            endPlace = cleanPlace(match[1])
-            break
-        }
-    }
-
-    return {
-        startPlace: endPlace ? (profile.value.city || '') : '',
-        endPlace
-    }
-}
-
-function legacyCleanPlace(value) {
-    return String(value || '')
-        .replace(/(玩|游玩|旅游|旅行|出差|看展).*$/g, '')
-        .replace(/[，。；;,.!?、]/g, '')
-        .replace(/^(去|到|前往|从|自)/g, '')
-        .replace(/的?$/g, '')
-        .trim()
-}
-
-function legacyExtractDays(text = '') {
-    const digit = text.match(/(\d+)\s*(?:天|日)/)
-    if (digit) return Number(digit[1])
-    const cn = text.match(/([一二两三四五六七八九十])\s*(?:天|日)/)
-    if (!cn) return null
-    return { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 }[cn[1]] || null
-}
-
-function legacyExtractBudget(text = '') {
-    const match = text.match(/(?:预算|花费|费用)[:：]?\s*([0-9]+(?:\s*[-~到]\s*[0-9]+)?\s*(?:元|块)?|经济|中等|舒适|高端)/)
-    return match ? match[1].trim() : ''
-}
-
-function legacyExtractPreference(text = '') {
-    const options = ['舒适优先', '少换乘', '时间优先', '经济优先', '亲子友好', '老人友好', '人文', '美食', '自然风景']
-    return options.find(item => text.includes(item)) || ''
-}
-
-function legacyExtractCompanions(text = '') {
-    const options = ['老人', '孩子', '儿童', '亲子', '情侣', '朋友', '同事', '家庭']
-    const hit = options.filter(item => text.includes(item))
-    return hit.length ? [...new Set(hit)].join('、') : ''
-}
-
-function legacyExtractScenario(text = '') {
-    if (/商务|出差|会议/.test(text)) return '商务出行'
-    if (/亲子|孩子|儿童|家庭/.test(text)) return '亲子出行'
-    if (/老人|无障碍|轮椅/.test(text)) return '特殊照顾'
-    if (/周末|两天|三天|旅游|游玩|旅行/.test(text)) return '休闲旅行'
-    return ''
-}
-
-function extractStructuredPlan(msg) {
-    const aiText = stripUiText(String(msg?.content || ''))
-    const rawQuestion = stripUiText(String(msg?.rawQuestion || [...messages.value].reverse().find(item => item.role === 'user')?.content || ''))
-    const text = `${rawQuestion}\n${aiText}`
-    const places = extractPlaces(rawQuestion, aiText)
-    const days = extractDays(text)
-    const budget = extractBudget(text)
-    const preference = extractPreference(text)
-    const companions = extractCompanions(text)
-    const scenario = extractScenario(text)
-    return {
-        startPlace: places.startPlace,
-        endPlace: places.endPlace,
-        scenario,
-        days,
-        preference,
-        budget,
-        companions,
-        rawQuestion,
-        hasUsefulFields: Boolean(places.startPlace || places.endPlace || days || budget || preference || companions || scenario)
-    }
-}
-
-function extractPlaces(question, answer) {
-    const source = `${stripUiText(question)}\n${stripUiText(answer)}`
-    const explicitPatterns = [
-        /(?:从|自|起点|出发地)\s*[:：]?\s*([^\s，。；;,.!?、\n]{2,24})\s*(?:出发)?(?:到|去|至|前往|抵达)\s*([^\s，。；;,.!?、\n]{2,24})/,
-        /(?:从|自)\s*([^\s，。；;,.!?、\n]{2,24})\s*(?:去|到|至|前往)\s*([^\s，。；;,.!?、\n]{2,24})/,
-        /(?:起点|出发地)\s*[:：]\s*([^\s，。；;,.!?、\n]{2,24})[\s\S]{0,120}(?:终点|目的地)\s*[:：]\s*([^\s，。；;,.!?、\n]{2,24})/
-    ]
-    for (const pattern of explicitPatterns) {
-        const match = source.match(pattern)
-        if (match) {
-            return { startPlace: cleanPlace(match[1]), endPlace: cleanPlace(match[2]) }
-        }
-    }
-
-    const destinationPatterns = [
-        /(?:去|到|前往)\s*([^\s，。；;,.!?、\n]{2,20}?)(?:玩|旅游|出差|看展|游玩|旅行|两天|三天|[0-9一二两三四五六七八九十]+天)/,
-        /目的地\s*[:：]\s*([^\s，。；;,.!?、\n]{2,20})/
-    ]
-    let endPlace = ''
-    for (const pattern of destinationPatterns) {
-        const match = source.match(pattern)
-        if (match) {
-            endPlace = cleanPlace(match[1])
-            break
-        }
-    }
-
-    return {
-        startPlace: endPlace ? cleanPlace(profile.value.city || '') : '',
-        endPlace
-    }
-}
-
-function cleanPlace(value) {
-    const text = String(value || '')
-        .replace(/<[^>]*>/g, '')
-        .replace(/(已识别.*|未识别.*|用于保存.*|保存到历史方案.*)$/g, '')
-        .replace(/(玩|游玩|旅游|旅行|出差|看展|两天|三天|[0-9一二两三四五六七八九十]+天).*$/g, '')
-        .replace(/[，。；;,.!?、\n\r]/g, '')
-        .replace(/^(从|自|去|到|至|前往|起点|终点|目的地|出发地)[:：]?/g, '')
-        .trim()
-    return normalizeCityName(text)
-}
-
-function extractDays(text = '') {
-    const digit = text.match(/(\d+)\s*(?:天|日)/)
-    if (digit) return Number(digit[1])
-    const cn = text.match(/([一二两三四五六七八九十])\s*(?:天|日)/)
-    if (!cn) return null
-    return { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 }[cn[1]] || null
-}
-
-function extractBudget(text = '') {
-    const match = text.match(/(?:预算|花费|费用)[:：]?\s*([0-9]+(?:\s*[-~到至]\s*[0-9]+)?\s*(?:元|块|人民币)?|经济|中等|舒适|高端)/)
-    return match ? match[1].trim() : ''
-}
-
-function extractPreference(text = '') {
-    const options = ['舒适优先', '少换乘', '少走路', '时间优先', '经济优先', '亲子友好', '老人友好', '人文', '美食', '自然风景']
-    return options.find(item => text.includes(item)) || ''
-}
-
-function extractCompanions(text = '') {
-    const options = ['老人', '孩子', '儿童', '亲子', '情侣', '朋友', '同事', '家庭']
-    const hit = options.filter(item => text.includes(item))
-    return hit.length ? [...new Set(hit)].join('、') : ''
-}
-
-function extractScenario(text = '') {
-    if (/商务|出差|会议/.test(text)) return '商务出行'
-    if (/亲子|孩子|儿童|家庭/.test(text)) return '亲子出行'
-    if (/老人|无障碍|轮椅|少走路/.test(text)) return '特殊照顾'
-    if (/周末|两天|三天|旅游|游玩|旅行/.test(text)) return '休闲旅行'
-    return ''
-}
-
-function stripUiText(value = '') {
-    return String(value)
-        .replace(/已识别出行信息[\s\S]*/g, '')
-        .replace(/用于保存与导入/g, '')
-        .replace(/方案已保存到历史方案[\s\S]*/g, '')
-}
-
-function normalizeCityName(value = '') {
-    const hit = String(value).match(/([\u4e00-\u9fa5]{2,12}(?:市|省|区|县|州|盟))/)
-    if (hit) return hit[1]
-    return String(value).replace(/[^\u4e00-\u9fa5A-Za-z0-9·\-]/g, '').slice(0, 16)
 }
 
 function handleNewChat() {
@@ -682,132 +431,5 @@ onBeforeUnmount(() => {
 
 <style scoped>
 @import './chat.css';
-
-.app-layout {
-    height: 100vh;
-    display: flex;
-    overflow: hidden;
-}
-
-.main-layout {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    height: 100vh;
-}
-
-.page-header {
-    height: 64px;
-    flex-shrink: 0;
-    background: var(--bg-color);
-    border-bottom: 1px solid var(--border-color);
-    padding: 0 32px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.header-title {
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--text-main);
-}
-
-.header-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.home-link {
-    height: 34px;
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 0 12px;
-    border: 1px solid var(--border-color);
-    border-radius: 999px;
-    background: var(--card-bg);
-    color: var(--text-secondary);
-    cursor: pointer;
-}
-
-.home-link:hover {
-    color: var(--primary-color);
-    border-color: var(--primary-color);
-}
-
-.status-badge {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    border-radius: 12px;
-    color: #16823a;
-    background: rgba(22, 130, 58, 0.1);
-    font-size: 13px;
-}
-
-.status-badge i {
-    font-size: 8px;
-}
-
-.overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.1);
-    z-index: 80;
-}
-
-.page-body {
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
-    background: var(--bg-color);
-}
-
-.module-wrapper {
-    height: 100%;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    background: var(--bg-color);
-}
-
-.new-chat-floating {
-    position: fixed;
-    right: 32px;
-    top: 78px;
-    z-index: 20;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 14px;
-    border: 1px solid var(--border-color);
-    border-radius: 999px;
-    background: var(--card-bg);
-    color: var(--text-main);
-    box-shadow: var(--shadow-sm);
-    cursor: pointer;
-}
-
-.new-chat-floating:hover {
-    color: var(--primary-color);
-    border-color: var(--primary-color);
-}
-
-.transit-page {
-    flex-direction: row;
-}
-
-.trip-page {
-    overflow-y: auto;
-}
-
-@media (max-width: 768px) {
-    .page-header {
-        padding: 0 16px;
-    }
-}
+@import '../../views/chat/styles/chatPage.css';
 </style>

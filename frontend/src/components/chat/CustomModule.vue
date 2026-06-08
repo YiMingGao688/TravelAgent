@@ -70,7 +70,6 @@ async function generate() {
 }
 
 async function removeSavedPlan() {
-    console.log('前端删除 id = ', savedPlan.value?.id, typeof savedPlan.value?.id)
     if (!savedPlan.value?.id) return
     if (!confirm('确定删除刚保存的行程吗？数据库记录会同步删除。')) return
     await deleteTripPlan(savedPlan.value.id)

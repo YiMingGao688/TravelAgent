@@ -1,23 +1,29 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
-import logoUrl from '../../assets/logo.png'
-import heroBgUrl from '../../assets/images/hero-bg.png'
-import hotelResultBgUrl from '../../assets/images/hotel-result-bg.png'
-import driveResultBgUrl from '../../assets/images/result-drive-bg.png'
-import busResultBgUrl from '../../assets/images/result-bus-bg.png'
-import subwayResultBgUrl from '../../assets/images/result-subway-bg.png'
-import trainResultBgUrl from '../../assets/images/result-train-bg.png'
-import flightResultBgUrl from '../../assets/images/result-flight-bg.png'
-import cruiseResultBgUrl from '../../assets/images/result-cruise-bg.png'
-import stayIcon from '../../assets/icons/stay.png'
-import driveIcon from '../../assets/icons/drive.png'
-import metroIcon from '../../assets/icons/metro.png'
-import railIcon from '../../assets/icons/rail.png'
-import flightIcon from '../../assets/icons/flight.png'
-import cruiseIcon from '../../assets/icons/cruise.png'
-import busIcon from '../../assets/icons/bus.png'
-import xiaoqiAvatar from '../../assets/icons/xiaoqi-avatar.png'
+import LandingSidebar from './components/LandingSidebar.vue'
+import HomeHeroHeader from './components/HomeHeroHeader.vue'
+import HeroIntro from './components/HeroIntro.vue'
+import TravelAssistantPanel from './components/TravelAssistantPanel.vue'
+import {
+  logoUrl,
+  heroBgUrl,
+  hotelResultBgUrl,
+  driveResultBgUrl,
+  busResultBgUrl,
+  subwayResultBgUrl,
+  trainResultBgUrl,
+  flightResultBgUrl,
+  cruiseResultBgUrl,
+  xiaoqiAvatar,
+  hotDemandChips,
+  planningStageMeta,
+  planningStageOrder,
+  enumLabelMap,
+  travelTabs,
+  sidebarEntries,
+  orderCategories
+} from './landingConfig.js'
 import {
   askAssistant,
   cancelBookingOrder,
@@ -33,7 +39,7 @@ import {
   planTravelChain,
   searchHotels,
   searchTraffic
-} from '../../utils/api.js'
+} from '../../api/landingApi.js'
 
 // ★ 每个地点输入框独立持有防抖实例，避免交叉取消
 const hotelDebouncedTips = createDebouncedLocationTips()
@@ -150,86 +156,6 @@ const weatherLoading = ref(false)
 const landingMapError = ref('')
 let landingMap = null
 let landingMapOverlays = []
-const hotDemandChips = [
-  '从北京南站去八达岭长城',
-  '从上海虹桥站去迪士尼乐园',
-  '从杭州西湖去灵隐寺',
-  '从广州南站去长隆度假区',
-  '从成都东站去都江堰景区'
-]
-
-const planningStageMeta = [
-  { key: 'intent', title: 'AI 已识别需求', thinking: 'AI 正在识别需求...' },
-  { key: 'route', title: '推荐出行方案', thinking: 'AI 正在生成推荐方案...' },
-  { key: 'traffic', title: '智能交通产品匹配', thinking: 'AI 正在匹配交通产品...' },
-  { key: 'hotel', title: '智能住宿匹配', thinking: 'AI 正在匹配住宿资源...' },
-  { key: 'risk', title: '动态风险预警', thinking: 'AI 正在检查天气与路线风险...' },
-  { key: 'timeline', title: '全过程服务时间轴', thinking: 'AI 正在生成全过程服务时间轴...' },
-  { key: 'order', title: '模拟预约 / 一键订购', thinking: 'AI 正在生成模拟预约...' }
-]
-
-const planningStageOrder = ['intent', 'route', 'traffic', 'hotel', 'risk', 'timeline', 'order']
-
-const enumLabelMap = {
-  CAR: '自驾',
-  car: '自驾',
-  TRAIN: '高铁',
-  train: '高铁',
-  BUS: '公交',
-  bus: '公交',
-  SUBWAY: '地铁',
-  METRO: '地铁',
-  subway: '地铁',
-  MIN_WALK: '少步行',
-  min_walk: '少步行',
-  SMART: '智能推荐',
-  FASTEST: '最快优先',
-  CHEAPEST: '低价优先',
-  LESS_TRANSFER: '少换乘',
-  SHORT_TRIP: '短途游',
-  BUSINESS_TRIP: '商务出差',
-  BUSINESS: '商务出差',
-  TRAVEL: '旅游出行',
-  GENERAL: '普通旅客',
-  LOW: '低',
-  MEDIUM: '中',
-  HIGH: '高'
-}
-
-const travelTabs = [
-  { id: 'hotel', name: '酒店', icon: stayIcon },
-  { id: 'selfDrive', name: '自驾', icon: driveIcon },
-  { id: 'bus', name: '公交', icon: busIcon },
-  { id: 'subway', name: '地铁', icon: metroIcon },
-  { id: 'train', name: '高铁', icon: railIcon },
-  { id: 'flight', name: '飞机', icon: flightIcon },
-  { id: 'cruise', name: '邮轮', icon: cruiseIcon }
-]
-
-const sidebarEntries = [
-  { id: 'hotel', name: '酒店', icon: 'fa-hotel', tabId: 'hotel' },
-  { id: 'drive', name: '自驾', icon: 'fa-car', tabId: 'selfDrive' },
-  { id: 'bus', name: '公交', icon: 'fa-bus', tabId: 'bus' },
-  { id: 'subway', name: '地铁', icon: 'fa-train-subway', tabId: 'subway' },
-  { id: 'train', name: '高铁', icon: 'fa-train', tabId: 'train' },
-  { id: 'flight', name: '飞机', icon: 'fa-plane', tabId: 'flight' },
-  { id: 'cruise', name: '邮轮', icon: 'fa-ship', tabId: 'cruise' }
-]
-
-sidebarEntries.push(
-  { id: 'map-divider', divider: true },
-  { id: 'map', name: '地图', icon: 'fa-map-location-dot', action: 'map' },
-  { id: 'orders-divider', divider: true },
-  { id: 'orders', name: '历史订单', icon: 'fa-receipt', action: 'orders' }
-)
-
-const orderCategories = [
-  { id: 'all', name: '全部历史订单' },
-  { id: 'hotel', name: '酒店订单' },
-  { id: 'train', name: '高铁订单' },
-  { id: 'flight', name: '飞机订单' },
-  { id: 'cruise', name: '邮轮订单' }
-]
 const activeTab = computed(() => travelTabs[activeTabIndex.value] || travelTabs[0])
 const activeMainTab = computed(() => activeTab.value.id)
 const isDrive = computed(() => activeMainTab.value === 'selfDrive')
@@ -1974,71 +1900,22 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
   </main>
 
   <main v-else class="home-page home-shell" :class="{ 'sidebar-collapsed': isSceneCollapsed, 'result-mode': pageMode === 'searchResults' }">
-    <aside class="scenario-sidebar" aria-label="出行服务导航">
-      <div class="scenario-sidebar-inner">
-        <nav class="sidebar-menu">
-          <template v-for="item in sidebarEntries" :key="item.id">
-            <div v-if="item.divider" class="sidebar-divider" :class="{ 'push-bottom': item.id === 'orders-divider' }"></div>
-            <button
-              v-else
-              type="button"
-              class="sidebar-item"
-              :class="{ active: isSidebarEntryActive(item) }"
-              @click="handleSidebarEntry(item)"
-            >
-              <i class="fa-solid" :class="item.icon"></i>
-              <span>{{ item.name }}</span>
-            </button>
-          </template>
-        </nav>
-      </div>
-    </aside>
+    <LandingSidebar :entries="sidebarEntries" :is-entry-active="isSidebarEntryActive" @select="handleSidebarEntry" />
 
     <section v-if="pageMode === 'home'" id="hero" class="home-hero">
       <div class="hero-overlay" :style="{ backgroundImage: `url(${heroBgUrl})` }"></div>
 
-      <header class="home-header">
-        <div class="home-nav">
-          <button type="button" class="nav-sidebar-toggle" @click="isSceneCollapsed = !isSceneCollapsed">
-            <i class="fa-solid fa-bars"></i>
-          </button>
-          <a class="home-brand" href="#hero">
-            <img :src="logoUrl" alt="七维智行" />
-            <span>七维智行</span>
-          </a>
-          <div class="top-search">
-            <input type="text" placeholder="搜索目的地、酒店、交通或出行服务" />
-            <button type="button" @click="handleSearch"><i class="fa-solid fa-magnifying-glass"></i></button>
-          </div>
-          <div class="top-actions">
-            <button v-if="!props.isLoggedIn" type="button" class="login-btn" @click="openLoginModal">登录 / 注册</button>
-            <button v-else type="button" class="user-avatar-btn" title="已登录">
-              {{ currentUserName.slice(0, 1).toUpperCase() }}
-            </button>
-          </div>
-        </div>
-      </header>
+      <HomeHeroHeader
+        :logo-url="logoUrl"
+        :is-logged-in="props.isLoggedIn"
+        :current-user-name="currentUserName"
+        @toggle-sidebar="isSceneCollapsed = !isSceneCollapsed"
+        @search="handleSearch"
+        @login="openLoginModal"
+      />
 
       <div class="hero-content">
-        <section class="hero-copy" aria-label="首页介绍">
-          <h1>探索世界，让出行更智能</h1>
-          <div class="hero-feature-row" aria-label="平台能力">
-            <div class="hero-feature-item">
-              <i class="fa-solid fa-brain"></i>
-              <div><strong>智能规划</strong><span>一键生成最佳行程</span></div>
-            </div>
-            <div class="hero-feature-divider"></div>
-            <div class="hero-feature-item">
-              <i class="fa-solid fa-share-nodes"></i>
-              <div><strong>多方式联动</strong><span>机票、火车、酒店无缝衔接</span></div>
-            </div>
-            <div class="hero-feature-divider"></div>
-            <div class="hero-feature-item">
-              <i class="fa-solid fa-shield-halved"></i>
-              <div><strong>实时服务</strong><span>动态提醒，安心出行</span></div>
-            </div>
-          </div>
-        </section>
+        <HeroIntro />
 
         <section class="hero-chain-search" aria-label="一句话智能规划">
           <form class="hero-chain-form" @submit.prevent="runTravelChainPlan">
@@ -2294,26 +2171,7 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
         </div>
       </section>
 
-      <aside class="trip-panel travel-assistant-panel">
-        <header class="trip-panel-head">
-          <div>
-            <span>出行助手</span>
-            <h2>服务入口</h2>
-          </div>
-        </header>
-        <div class="assistant-entry-list">
-          <button type="button" @click="openTripConsultation">
-            <i class="fa-solid fa-comments"></i>
-            <strong>行程问题咨询</strong>
-            <span>结合当前行程询问路线、住宿、提醒等问题</span>
-          </button>
-          <button type="button" :disabled="weatherLoading" @click="queryTripWeather">
-            <i class="fa-solid fa-cloud-sun"></i>
-            <strong>天气查询</strong>
-            <span>{{ weatherLoading ? '正在查询天气...' : '查询起点和终点天气' }}</span>
-          </button>
-        </div>
-      </aside>
+      <TravelAssistantPanel :weather-loading="weatherLoading" @open-consultation="openTripConsultation" @query-weather="queryTripWeather" />
     </section>
 
     <section v-if="pageMode === 'map'" class="landing-map-page" aria-label="地图可视化">
@@ -2661,7 +2519,7 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
   </main>
 </template>
 
-<style scoped>
+<style>
 .home-page { min-height: 100vh; overflow-x: hidden; background: #f8fafc; color: #0f172a; }
 .home-shell { --scenario-width: 196px; --scenario-expanded: 196px; padding-left: var(--scenario-width); padding-top: 56px; transition: padding-left .34s cubic-bezier(.22, 1, .36, 1); }
 .home-shell.sidebar-collapsed { --scenario-width: 76px; }
