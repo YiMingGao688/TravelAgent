@@ -30,8 +30,10 @@ import com.itheima.travelagent2.modules.trip.entity.TripPlan;
 import com.itheima.travelagent2.modules.trip.mapper.TripPlanMapper;
 import com.itheima.travelagent2.modules.trip.service.TripPlanService;
 import com.itheima.travelagent2.modules.user.entity.User;
+import com.itheima.travelagent2.modules.user.entity.UserPermission;
 import com.itheima.travelagent2.modules.user.entity.UserProfile;
 import com.itheima.travelagent2.modules.user.mapper.UserMapper;
+import com.itheima.travelagent2.modules.user.mapper.UserPermissionMapper;
 import com.itheima.travelagent2.modules.user.mapper.UserProfileMapper;
 import com.itheima.travelagent2.modules.user.service.UserService;
 import org.springframework.beans.factory.annotation.Value;
@@ -67,6 +69,7 @@ public class AdminController {
     private final TravelServiceReportService reportService;
     private final ChatRecordMapper chatRecordMapper;
     private final UserMapper userMapper;
+    private final UserPermissionMapper userPermissionMapper;
     private final UserProfileMapper userProfileMapper;
     private final TripPlanMapper tripPlanMapper;
     private final RouteMapper routeMapper;
@@ -92,6 +95,7 @@ public class AdminController {
                            TravelServiceReportService reportService,
                            ChatRecordMapper chatRecordMapper,
                            UserMapper userMapper,
+                           UserPermissionMapper userPermissionMapper,
                            UserProfileMapper userProfileMapper,
                            TripPlanMapper tripPlanMapper,
                            RouteMapper routeMapper,
@@ -110,6 +114,7 @@ public class AdminController {
         this.reportService = reportService;
         this.chatRecordMapper = chatRecordMapper;
         this.userMapper = userMapper;
+        this.userPermissionMapper = userPermissionMapper;
         this.userProfileMapper = userProfileMapper;
         this.tripPlanMapper = tripPlanMapper;
         this.routeMapper = routeMapper;
@@ -127,12 +132,12 @@ public class AdminController {
     public Result<Map<String, Object>> login(@RequestBody Map<String, String> body) {
         String username = body.getOrDefault("username", "");
         String password = body.getOrDefault("password", "");
-        User admin = userService.findByAccount(username);
+        User admin = userService.findByUsername(username);
         boolean passwordMatched = admin != null
                 && admin.getPassword() != null
                 && (passwordEncoder.matches(password, admin.getPassword()) || password.equals(admin.getPassword()));
         if (admin != null
-                && ("ADMIN".equalsIgnoreCase(admin.getRole()) || "SUPER_ADMIN".equalsIgnoreCase(admin.getRole()))
+                && userService.hasPermission(admin.getId(), "ADMIN", "SUPER_ADMIN")
                 && !"DISABLED".equalsIgnoreCase(admin.getStatus())
                 && passwordMatched) {
             if (password.equals(admin.getPassword())) {
@@ -143,7 +148,7 @@ public class AdminController {
             Map<String, Object> data = new HashMap<>();
             data.put("token", "simple-admin-token");
             data.put("username", admin.getUsername());
-            data.put("role", admin.getRole());
+            data.put("permission", admin.getPermission());
             data.put("userId", admin.getId());
             return Result.success("login success", data);
         }
@@ -211,8 +216,8 @@ public class AdminController {
 
     @PostMapping("/users")
     public Result<User> createUser(@RequestBody User user) {
-        if (user.getEmail() == null || user.getEmail().isBlank()) {
-            return Result.error(400, "email is required");
+        if (user.getPhone() == null || user.getPhone().isBlank()) {
+            return Result.error(400, "phone is required");
         }
         if (user.getPassword() == null || user.getPassword().isBlank()) {
             user.setPassword("123456");
@@ -230,20 +235,46 @@ public class AdminController {
             user.setPassword(passwordEncoder.encode(user.getPassword()));
         }
         userMapper.updateById(user);
+        syncUserPermission(id, user.getPermission());
         return Result.success("updated");
     }
 
     @DeleteMapping("/users/{id}")
     public Result<String> deleteUser(@PathVariable Integer id) {
         User target = userMapper.selectById(id);
-        if (target != null && "SUPER_ADMIN".equalsIgnoreCase(target.getRole())) {
-            Long superAdminCount = userMapper.selectCount(new LambdaQueryWrapper<User>().eq(User::getRole, "SUPER_ADMIN"));
+        if (target != null && userService.hasPermission(target.getId(), "SUPER_ADMIN")) {
+            Long superAdminCount = userPermissionMapper.selectCount(new LambdaQueryWrapper<UserPermission>()
+                    .eq(UserPermission::getPermissionCode, "SUPER_ADMIN")
+                    .eq(UserPermission::getStatus, "ENABLED"));
             if (superAdminCount <= 1) {
                 return Result.error(400, "至少需要保留一个超级管理员账号");
             }
         }
         userService.deleteById(id);
         return Result.success("deleted");
+    }
+
+    private void syncUserPermission(Integer userId, String permissionCode) {
+        if (userId == null || permissionCode == null || permissionCode.isBlank()) {
+            return;
+        }
+        String code = permissionCode.trim().toUpperCase();
+        UserPermission permission = userPermissionMapper.selectOne(new LambdaQueryWrapper<UserPermission>()
+                .eq(UserPermission::getUserId, userId)
+                .last("LIMIT 1"));
+        if (permission == null) {
+            permission = new UserPermission();
+            permission.setUserId(userId);
+            permission.setPermissionCode(code);
+            permission.setPermissionName(code);
+            permission.setStatus("ENABLED");
+            userPermissionMapper.insert(permission);
+            return;
+        }
+        permission.setPermissionCode(code);
+        permission.setPermissionName(code);
+        permission.setStatus("ENABLED");
+        userPermissionMapper.updateById(permission);
     }
 
     @GetMapping("/trip-plans")

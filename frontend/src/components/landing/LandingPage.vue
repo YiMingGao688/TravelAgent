@@ -4,7 +4,7 @@ import * as echarts from 'echarts'
 import LandingSidebar from './components/LandingSidebar.vue'
 import HomeHeroHeader from './components/HomeHeroHeader.vue'
 import HeroIntro from './components/HeroIntro.vue'
-import TravelAssistantPanel from './components/TravelAssistantPanel.vue'
+import AgentPlanWorkspace from '../agent-plan/AgentPlanWorkspace.vue'
 import {
   logoUrl,
   heroBgUrl,
@@ -37,6 +37,15 @@ import {
   listUserOrders,
   payBookingOrder,
   planTravelChain,
+  streamAgentTripPlan,
+  getAgentTripRun,
+  confirmTripPlanCard,
+  startAgentPlan,
+  supplementAgentPlan,
+  confirmAgentCandidate,
+  rejectAgentCandidate,
+  changeAgentCandidate,
+  finalizeAgentPlan,
   searchHotels,
   searchTraffic
 } from '../../api/landingApi.js'
@@ -145,6 +154,8 @@ const showChainStartTips = ref(false)
 const showChainEndTips = ref(false)
 const chainLoading = ref(false)
 const chainResult = ref(null)
+const agentPlanDetail = ref(null)
+const agentPlanActionLoading = ref(false)
 const afterSaleLoading = ref(false)
 const locatingStartPlace = ref(false)
 const chainAnimating = ref(false)
@@ -239,7 +250,7 @@ function enterApp() {
 }
 
 function openLoginModal() {
-  emit('require-login', '登录后可同步订单、AI 助手会话和个性化出行偏好。')
+  emit('require-login', '登录后可同步订单、智能助手会话和个性化出行偏好。')
 }
 
 function requireLoggedIn(message = '请先登录后再继续操作。') {
@@ -438,8 +449,8 @@ function adjustHotelGuests(field, step) {
 }
 
 function validateHotelSearch() {
-  if (!hasValidLocation(hotelSearchForm.value.selectedLocation)) {
-    lastMessage.value = '请先从高德地点建议中选择目的地，避免地点识别错误。'
+  if (!hasValidLocation(hotelSearchForm.value.selectedLocation) && hotelSearchForm.value.destinationKeyword.trim().length < 2) {
+    lastMessage.value = '请先填写城市、商圈、景区或酒店名称。'
     window.alert(lastMessage.value)
     showHotelTips.value = true
     return false
@@ -485,6 +496,11 @@ function openServiceSearchPage(tabId, options = {}) {
   lastMessage.value = ''
   pageMode.value = 'searchResults'
   hotelDetail.value = null
+  orderModal.value = null
+  showGuestPicker.value = false
+  showHotelTips.value = false
+  showServiceStartTips.value = false
+  showServiceEndTips.value = false
   if (pushHistory) pushServicePage(tabId)
   nextTick(() => {
     const shell = document.querySelector('.app-wrapper.landing-mode')
@@ -766,6 +782,11 @@ async function handleSearch(tabId = activeMainTab.value, options = {}) {
   loading.value = true
   lastMessage.value = ''
   hotelDetail.value = null
+  orderModal.value = null
+  showGuestPicker.value = false
+  showHotelTips.value = false
+  showServiceStartTips.value = false
+  showServiceEndTips.value = false
   resultFromSidebar.value = fromSidebar
   const targetTabId = tabId || activeMainTab.value
   const targetIsDrive = targetTabId === 'selfDrive'
@@ -777,43 +798,36 @@ async function handleSearch(tabId = activeMainTab.value, options = {}) {
       }
       resultType.value = 'hotel'
       pageMode.value = 'searchResults'
-	      const selected = hotelSearchForm.value.selectedLocation
-	      const [longitude, latitude] = String(selected?.location || '').split(',')
-	      hotelResults.value = await searchHotels({
-	        cityName: selected?.cityName || selected?.district || hotelSearchForm.value.destinationKeyword,
-	        adcode: selected?.adcode,
-	        longitude,
-	        latitude,
-	        checkInDate: hotelSearchForm.value.checkInDate,
-	        checkOutDate: hotelSearchForm.value.checkOutDate,
-	        adults: hotelSearchForm.value.adults,
-	        children: hotelSearchForm.value.children,
-	        rooms: hotelSearchForm.value.rooms,
-	        preference: hotelSearchForm.value.preference,
-	        minPrice: hotelSearchForm.value.minPrice,
-	        maxPrice: hotelSearchForm.value.maxPrice
-	      })
+      const selected = hotelSearchForm.value.selectedLocation
+      hotelResults.value = await searchHotels({
+        city: selected?.cityName || selected?.district || hotelSearchForm.value.destinationKeyword,
+        keyword: hotelSearchForm.value.destinationKeyword,
+        checkInDate: hotelSearchForm.value.checkInDate,
+        checkOutDate: hotelSearchForm.value.checkOutDate,
+        minPrice: hotelSearchForm.value.minPrice,
+        maxPrice: hotelSearchForm.value.maxPrice
+      })
 	      trafficResults.value = []
 	      resultType.value = 'hotel'
-	      lastMessage.value = fromSidebar ? '' : `已查询到 ${hotelResults.value.length} 条住宿结果，优先使用真实酒店 API，失败时自动降级本地数据`
+	      lastMessage.value = hotelResults.value.length ? `已从模拟数据库查询到 ${hotelResults.value.length} 条住宿结果` : '模拟数据库没有匹配的住宿结果'
     } else {
       if (fromSidebar && !validateServiceSearch()) {
         return
       }
       resultType.value = 'traffic'
       pageMode.value = 'searchResults'
-      const driveSearch = activeDriveTab.value === 'rentalCar'
+      const driveSearch = !fromSidebar && activeDriveTab.value === 'rentalCar'
         ? { startPlace: rentalCarForm.value.pickupPlace, endPlace: rentalCarForm.value.returnPlace === '与取车相同' ? '西湖湖滨' : rentalCarForm.value.returnPlace, date: rentalCarForm.value.date }
         : { startPlace: privateCarForm.value.startPlace, endPlace: privateCarForm.value.endPlace, date: privateCarForm.value.date }
       trafficResults.value = await searchTraffic({
         type: trafficType(targetTabId),
-        startPlace: targetIsDrive ? driveSearch.startPlace : searchForm.value.startPlace,
-        endPlace: targetIsDrive ? driveSearch.endPlace : searchForm.value.destination,
-        departDate: targetIsDrive ? driveSearch.date : searchForm.value.date
+        startPlace: targetIsDrive && !fromSidebar ? driveSearch.startPlace : searchForm.value.startPlace,
+        endPlace: targetIsDrive && !fromSidebar ? driveSearch.endPlace : searchForm.value.destination,
+        departDate: targetIsDrive && !fromSidebar ? driveSearch.date : searchForm.value.date
       })
       hotelResults.value = []
       resultType.value = 'traffic'
-      lastMessage.value = fromSidebar ? '' : `已从数据库查询到 ${trafficResults.value.length} 条交通产品`
+      lastMessage.value = trafficResults.value.length ? `已从模拟数据库查询到 ${trafficResults.value.length} 条出行产品` : '模拟数据库没有匹配的出行产品'
     }
     pageMode.value = 'searchResults'
     if (pushHistory) {
@@ -1000,6 +1014,7 @@ onMounted(() => {
     orders.value = []
   })
   loadHomeRecommendations()
+  restoreAgentTripRun()
   syncPageFromAddress()
   window.addEventListener('popstate', syncPageFromAddress)
 })
@@ -1014,6 +1029,16 @@ onBeforeUnmount(() => {
   window.removeEventListener('popstate', syncPageFromAddress)
   destroyLandingMap()
 })
+
+async function restoreAgentTripRun() {
+  const runId = sessionStorage.getItem('lastAgentTripRunId')
+  if (!runId) return
+  try {
+    agentPlanDetail.value = await getAgentTripRun(runId)
+  } catch (error) {
+    sessionStorage.removeItem('lastAgentTripRunId')
+  }
+}
 
 async function loadHomeRecommendations() {
   try {
@@ -1143,13 +1168,15 @@ async function runTravelChainPlan() {
   chainLoading.value = true
   chainAnimating.value = true
     chainResult.value = null
+    agentPlanDetail.value = { run: null, events: [], cards: [], finalItinerary: [] }
     chainOrderPreview.value = null
     resetPlanningStages()
     visiblePlanningStages.value = ['intent']
     planningStageStates.value.intent = 'thinking'
     await nextTick()
+    scrollToAgentPlanWorkspace()
     try {
-    chainResult.value = await planTravelChain({
+    const planPayload = {
       userId: sessionStorage.getItem('userId') || 1,
       sessionId: sessionStorage.getItem('chatSessionId') || `home-${Date.now()}`,
       startPlace,
@@ -1161,8 +1188,27 @@ async function runTravelChainPlan() {
       startCity: chainStartLocation.value.cityName,
       endCity: chainEndLocation.value.cityName,
       message
+    }
+    const agentPayload = {
+      userId: currentUserId.value || planPayload.userId || 'test_user',
+      requestId: planPayload.sessionId,
+      startPlace,
+      endPlace,
+      requirementText: message,
+      departDate: '',
+      budget: null,
+      preference: demandText,
+      peopleCount: 1,
+      sceneType: 'SMART_TRAVEL'
+    }
+    await streamAgentTripPlan(agentPayload, {
+      onEvent: handleAgentTripStreamEvent
     })
-    lastMessage.value = '一句话智能规划已完成：咨询、规划、匹配、风险、时间轴、报告已闭环生成'
+    const runId = agentPlanDetail.value?.run?.id || sessionStorage.getItem('lastAgentTripRunId')
+    if (runId) {
+      agentPlanDetail.value = await getAgentTripRun(runId)
+    }
+    lastMessage.value = '真实智能体规划已完成，等待你确认关键行程卡片'
     await loadOrders()
     nextTick(() => {
       const shell = document.querySelector('.app-wrapper.landing-mode')
@@ -1178,8 +1224,150 @@ async function runTravelChainPlan() {
   }
 }
 
+function scrollToAgentPlanWorkspace() {
+  nextTick(() => {
+    const shell = document.querySelector('.app-wrapper.landing-mode')
+    const target = document.querySelector('.home-trip-workspace')
+    if (shell && target) shell.scrollTo({ top: target.offsetTop - 18, behavior: 'smooth' })
+  })
+}
+
+function handleAgentTripStreamEvent(eventType, data) {
+  if (!agentPlanDetail.value) {
+    agentPlanDetail.value = { run: null, events: [], cards: [], finalItinerary: [] }
+  }
+  if (eventType === 'agent_event') {
+    const runId = data.runId || data.run_id
+    if (runId) {
+      sessionStorage.setItem('lastAgentTripRunId', String(runId))
+      agentPlanDetail.value.run = {
+        ...(agentPlanDetail.value.run || {}),
+        id: String(runId),
+        startPlace: chainStartPlace.value,
+        endPlace: chainEndPlace.value,
+        requirementText: chainInput.value,
+        status: data.status === 'FAILED' ? 'FAILED' : 'RUNNING',
+        currentStage: data.stage
+      }
+    }
+    const exists = agentPlanDetail.value.events.some(item => String(item.id) === String(data.id))
+    if (!exists) agentPlanDetail.value.events.push(data)
+  }
+  if (eventType === 'trip_card') {
+    const exists = agentPlanDetail.value.cards.some(item => String(item.id) === String(data.id))
+    if (!exists) agentPlanDetail.value.cards.push(data)
+  }
+  if (eventType === 'completed') {
+    if (data.runId) {
+      sessionStorage.setItem('lastAgentTripRunId', String(data.runId))
+      agentPlanDetail.value.run = {
+        ...(agentPlanDetail.value.run || {}),
+        id: String(data.runId),
+        status: 'WAITING_CONFIRM'
+      }
+    }
+    lastMessage.value = data.message || '智能体规划完成，等待确认'
+  }
+  if (eventType === 'failed') {
+    lastMessage.value = data.message || '智能体规划失败'
+    if (agentPlanDetail.value.run) agentPlanDetail.value.run.status = 'FAILED'
+  }
+}
+
 function clearChainInput() {
   chainInput.value = ''
+}
+
+async function handleAgentPlanSupplement(payload) {
+  const sessionId = agentPlanDetail.value?.session?.id
+  if (!sessionId || agentPlanActionLoading.value) return
+  agentPlanActionLoading.value = true
+  try {
+    agentPlanDetail.value = await supplementAgentPlan(sessionId, {
+      ...payload,
+      remark: '用户补充规划缺失信息'
+    })
+    if (payload.preference) {
+      chainInput.value = [chainInput.value.trim(), payload.preference]
+        .filter(Boolean)
+        .join('；补充信息：')
+    }
+    lastMessage.value = '已补充到当前智能体规划会话，继续沿用现有候选项和行程单'
+  } catch (error) {
+    lastMessage.value = error.message || '补充规划信息失败'
+  } finally {
+    agentPlanActionLoading.value = false
+  }
+}
+
+async function handleAgentCandidateConfirm(candidate) {
+  if (agentPlanDetail.value?.run?.id) {
+    if (!candidate?.id || agentPlanActionLoading.value) return
+    agentPlanActionLoading.value = true
+    try {
+      await confirmTripPlanCard(candidate.id)
+      agentPlanDetail.value = await getAgentTripRun(agentPlanDetail.value.run.id)
+      lastMessage.value = '卡片已确认并加入最终行程单'
+    } catch (error) {
+      lastMessage.value = error.message || '确认卡片失败'
+    } finally {
+      agentPlanActionLoading.value = false
+    }
+    return
+  }
+  const sessionId = agentPlanDetail.value?.session?.id
+  if (!sessionId || !candidate?.id || agentPlanActionLoading.value) return
+  agentPlanActionLoading.value = true
+  try {
+    agentPlanDetail.value = await confirmAgentCandidate(sessionId, candidate.id, { remark: '用户确认加入行程' })
+    lastMessage.value = '候选项已加入左侧行程单'
+  } catch (error) {
+    lastMessage.value = error.message || '确认候选项失败'
+  } finally {
+    agentPlanActionLoading.value = false
+  }
+}
+
+async function handleAgentCandidateReject(candidate) {
+  const sessionId = agentPlanDetail.value?.session?.id
+  if (!sessionId || !candidate?.id || agentPlanActionLoading.value) return
+  agentPlanActionLoading.value = true
+  try {
+    agentPlanDetail.value = await rejectAgentCandidate(sessionId, candidate.id, { remark: '用户暂不添加' })
+    lastMessage.value = '候选项已标记为暂不添加'
+  } catch (error) {
+    lastMessage.value = error.message || '拒绝候选项失败'
+  } finally {
+    agentPlanActionLoading.value = false
+  }
+}
+
+async function handleAgentCandidateChange(candidate) {
+  const sessionId = agentPlanDetail.value?.session?.id
+  if (!sessionId || !candidate?.id || agentPlanActionLoading.value) return
+  agentPlanActionLoading.value = true
+  try {
+    agentPlanDetail.value = await changeAgentCandidate(sessionId, candidate.id, { changeReason: '用户要求换一个方案' })
+    lastMessage.value = '已重新生成候选方案'
+  } catch (error) {
+    lastMessage.value = error.message || '换方案失败'
+  } finally {
+    agentPlanActionLoading.value = false
+  }
+}
+
+async function handleAgentPlanFinalize() {
+  const sessionId = agentPlanDetail.value?.session?.id
+  if (!sessionId || agentPlanActionLoading.value) return
+  agentPlanActionLoading.value = true
+  try {
+    agentPlanDetail.value = await finalizeAgentPlan(sessionId)
+    lastMessage.value = '总行程卡片已生成'
+  } catch (error) {
+    lastMessage.value = error.message || '生成总行程卡片失败'
+  } finally {
+    agentPlanActionLoading.value = false
+  }
 }
 
 function fillHotDemandFinal(text) {
@@ -1650,14 +1838,17 @@ function reverseGeocodeStartPlace(longitude, latitude) {
       locatingStartPlace.value = false
       const address = result?.regeocode?.formattedAddress
       if (status === 'complete' && address) {
-        chainStartPlace.value = address
-        chainStartLocation.value = {
+        const locatedTip = {
           name: address,
           address,
           location: `${longitude},${latitude}`,
           adcode: result?.regeocode?.addressComponent?.adcode || '',
           cityName: result?.regeocode?.addressComponent?.city || result?.regeocode?.addressComponent?.province || ''
         }
+        chainStartPlace.value = address
+        chainStartLocation.value = locatedTip
+        chainStartTips.value = [locatedTip]
+        showChainStartTips.value = false
       } else {
         lastMessage.value = '定位失败，请手动输入出发地'
         window.alert(lastMessage.value)
@@ -1702,9 +1893,7 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
           <i class="fa-solid fa-arrow-left"></i>
           返回搜索结果
         </button>
-        <div class="top-actions">
-          <button type="button" class="login-btn" @click="enterApp">进入系统</button>
-        </div>
+        <div class="top-actions detail-top-spacer" aria-hidden="true"></div>
       </div>
     </header>
 
@@ -1934,9 +2123,6 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
                   <button class="field-icon-btn" type="button" :disabled="locatingStartPlace" title="自动定位" @click="autoLocateStartPlace">
                     <i :class="['fa-solid', locatingStartPlace ? 'fa-spinner fa-spin' : 'fa-location-crosshairs']"></i>
                   </button>
-                  <button class="field-icon-btn" type="button" title="编辑出发地" @click="$event.currentTarget.closest('label')?.querySelector('input')?.focus()">
-                    <i class="fa-solid fa-pen"></i>
-                  </button>
                 </div>
                 <div v-if="showChainStartTips && (chainStartTips.length || chainStartTipLoading || chainStartPlace.trim().length >= 2)" class="location-tip-panel chain-location-tip-panel">
                   <small v-if="chainStartTipLoading">正在查询高德地点...</small>
@@ -2070,8 +2256,8 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
       </div>
     </section>
 
-    <section v-if="pageMode === 'home'" class="home-trip-workspace" aria-label="行程与出行助手">
-      <section class="trip-panel my-trip-panel">
+    <section v-if="pageMode === 'home'" class="home-trip-workspace" aria-label="行程与智能体规划">
+      <section v-if="!agentPlanDetail && !chainLoading" class="trip-panel my-trip-panel">
         <header class="trip-panel-head">
           <div>
             <span>我的行程</span>
@@ -2084,7 +2270,7 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
 
         <div v-if="chainAnimating || hasCurrentItinerary || needsClarification(normalizedChainResult)" class="itinerary-module-grid">
           <article v-if="shouldShowStage('intent')" class="itinerary-module-card stage-intent" :class="[`state-${planningStageStates.intent}`]">
-            <header><h3>AI 已识别需求</h3><span>{{ stageStatusLabel('intent') }}</span></header>
+            <header><h3>已识别需求</h3><span>{{ stageStatusLabel('intent') }}</span></header>
             <div v-if="isStageThinking('intent')" class="stage-skeleton"><strong>{{ getStageMeta('intent').thinking }}</strong><i></i><i></i><i></i></div>
             <div v-else class="intent-field-grid">
               <div v-for="field in itineraryIntentFields" :key="field.label"><i :class="['fa-solid', field.icon]"></i><span>{{ field.label }}</span><strong>{{ displayValue(field.value) }}</strong></div>
@@ -2171,7 +2357,16 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
         </div>
       </section>
 
-      <TravelAssistantPanel :weather-loading="weatherLoading" @open-consultation="openTripConsultation" @query-weather="queryTripWeather" />
+      <AgentPlanWorkspace
+        :detail="agentPlanDetail"
+        :loading="chainLoading"
+        :action-loading="agentPlanActionLoading"
+        @supplement-plan="handleAgentPlanSupplement"
+        @confirm-candidate="handleAgentCandidateConfirm"
+        @reject-candidate="handleAgentCandidateReject"
+        @change-candidate="handleAgentCandidateChange"
+        @finalize-plan="handleAgentPlanFinalize"
+      />
     </section>
 
     <section v-if="pageMode === 'map'" class="landing-map-page" aria-label="地图可视化">
@@ -2253,7 +2448,7 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
           <input type="text" placeholder="搜索目的地、酒店、交通或出行服务" />
           <button type="button" @click="handleSearch(currentResultTabId)"><i class="fa-solid fa-magnifying-glass"></i></button>
         </div>
-        <div class="top-actions">
+        <div v-if="pageMode === 'home'" class="top-actions">
           <button v-if="!props.isLoggedIn" type="button" class="login-btn" @click="openLoginModal">登录 / 注册</button>
           <button v-else type="button" class="user-avatar-btn" title="已登录">
             {{ currentUserName.slice(0, 1).toUpperCase() }}
@@ -2323,72 +2518,109 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
     <section
       v-if="pageMode === 'searchResults'"
       class="service-result-hero"
-      :style="{ backgroundImage: `linear-gradient(90deg, rgba(15, 23, 42, .68), rgba(15, 23, 42, .24)), url(${resultHeroBg})` }"
+      :style="{ backgroundImage: `linear-gradient(90deg, rgba(15, 23, 42, .54), rgba(15, 23, 42, .16)), url(${resultHeroBg})` }"
     >
       <div v-if="!resultFromSidebar">
         <h1>{{ resultTab.name }}搜索结果</h1>
         <p>{{ lastMessage || '结果来自后端接口和 MySQL 模拟业务数据。' }}</p>
       </div>
       <button v-if="!resultFromSidebar" type="button" class="refresh-result-btn" @click="handleSearch(currentResultTabId)">重新搜索</button>
-      <form v-if="resultFromSidebar" class="result-inline-search" @submit.prevent="handleSearch(currentResultTabId, { fromSidebar: true })">
-        <label v-if="currentResultTabId !== 'hotel'">
-          <span>出发地</span>
-          <input
-            v-model="searchForm.startPlace"
-            placeholder="城市、车站或机场"
-            autocomplete="off"
-            @input="loadServiceLocationTips('start')"
-            @focus="showServiceStartTips = true"
-          />
-          <div v-if="showServiceStartTips && (serviceStartTips.length || serviceStartTipLoading || searchForm.startPlace.trim().length >= 2)" class="location-tip-panel result-location-tip-panel">
-            <small v-if="serviceStartTipLoading">正在查询高德地点...</small>
-            <button v-for="tip in serviceStartTips" :key="`service-start-${tip.name}-${tip.location}`" type="button" @click="selectServiceLocation('start', tip)">
-              <strong>{{ tip.name }}</strong>
-              <em>{{ locationTipText(tip) }}</em>
-            </button>
-            <small v-if="!serviceStartTipLoading && !serviceStartTips.length">请从高德建议中选择出发地</small>
-          </div>
-        </label>
-        <label>
-          <span>{{ currentResultTabId === 'hotel' ? '目的地/位置' : resultTabConfig.destinationLabel }}</span>
-          <input
-            v-if="currentResultTabId === 'hotel'"
-            v-model="hotelSearchForm.destinationKeyword"
-            placeholder="杭州、西湖、商圈"
-            autocomplete="off"
-            @input="loadHotelLocationTips"
-            @focus="showHotelTips = true"
-          />
-          <input
-            v-else
-            v-model="searchForm.destination"
-            :placeholder="resultTabConfig.destinationPlaceholder"
-            autocomplete="off"
-            @input="loadServiceLocationTips('end')"
-            @focus="showServiceEndTips = true"
-          />
-          <div v-if="currentResultTabId === 'hotel' && showHotelTips && (hotelLocationTips.length || hotelTipLoading || hotelSearchForm.destinationKeyword.trim().length >= 2)" class="location-tip-panel result-location-tip-panel">
-            <small v-if="hotelTipLoading">正在查询高德地点...</small>
-            <button v-for="tip in hotelLocationTips" :key="`result-hotel-${tip.name}-${tip.location}`" type="button" @click="selectHotelLocation(tip)">
-              <strong>{{ tip.name }}</strong>
-              <em>{{ locationTipText(tip) }}</em>
-            </button>
-            <small v-if="!hotelTipLoading && !hotelLocationTips.length">请从高德建议中选择目的地</small>
-          </div>
-          <div v-if="currentResultTabId !== 'hotel' && showServiceEndTips && (serviceEndTips.length || serviceEndTipLoading || searchForm.destination.trim().length >= 2)" class="location-tip-panel result-location-tip-panel">
-            <small v-if="serviceEndTipLoading">正在查询高德地点...</small>
-            <button v-for="tip in serviceEndTips" :key="`service-end-${tip.name}-${tip.location}`" type="button" @click="selectServiceLocation('end', tip)">
-              <strong>{{ tip.name }}</strong>
-              <em>{{ locationTipText(tip) }}</em>
-            </button>
-            <small v-if="!serviceEndTipLoading && !serviceEndTips.length">请从高德建议中选择目的地</small>
-          </div>
-        </label>
-        <label>
-          <span>日期</span>
-          <input v-if="currentResultTabId === 'hotel'" v-model="hotelSearchForm.checkInDate" type="date" />
-          <input v-else v-model="searchForm.date" type="date" />
-        </label>
+      <form
+        v-if="resultFromSidebar"
+        class="result-inline-search"
+        :class="{ 'hotel-result-search': currentResultTabId === 'hotel' }"
+        @submit.prevent="handleSearch(currentResultTabId, { fromSidebar: true })"
+      >
+        <template v-if="currentResultTabId === 'hotel'">
+          <label class="wide-field">
+            <span>目的地或酒店名</span>
+            <input
+              v-model="hotelSearchForm.destinationKeyword"
+              placeholder="城市、商圈、景区、酒店名"
+              autocomplete="off"
+              @input="loadHotelLocationTips"
+              @focus="showHotelTips = true"
+            />
+            <div v-if="showHotelTips && (hotelLocationTips.length || hotelTipLoading || hotelSearchForm.destinationKeyword.trim().length >= 2)" class="location-tip-panel result-location-tip-panel">
+              <small v-if="hotelTipLoading">正在查询地点...</small>
+              <button v-for="tip in hotelLocationTips" :key="`result-hotel-${tip.name}-${tip.location}`" type="button" @click="selectHotelLocation(tip)">
+                <strong>{{ tip.name }}</strong>
+                <em>{{ locationTipText(tip) }}</em>
+              </button>
+              <small v-if="!hotelTipLoading && !hotelLocationTips.length">没有匹配地点，可直接按关键词搜索</small>
+            </div>
+          </label>
+          <label>
+            <span>入住日期</span>
+            <input v-model="hotelSearchForm.checkInDate" type="date" />
+          </label>
+          <label>
+            <span>离店日期</span>
+            <input v-model="hotelSearchForm.checkOutDate" type="date" />
+          </label>
+          <label>
+            <span>人数与房间</span>
+            <input :value="hotelGuestText" readonly />
+          </label>
+          <label>
+            <span>最低预算</span>
+            <input v-model="hotelSearchForm.minPrice" type="number" min="0" placeholder="不限" />
+          </label>
+          <label>
+            <span>最高预算</span>
+            <input v-model="hotelSearchForm.maxPrice" type="number" min="0" placeholder="不限" />
+          </label>
+        </template>
+        <template v-else>
+          <label>
+            <span>{{ currentResultTabId === 'selfDrive' ? '取车/出发地' : '出发地' }}</span>
+            <input
+              v-model="searchForm.startPlace"
+              placeholder="城市、车站、机场或门店"
+              autocomplete="off"
+              @input="loadServiceLocationTips('start')"
+              @focus="showServiceStartTips = true"
+            />
+            <div v-if="showServiceStartTips && (serviceStartTips.length || serviceStartTipLoading || searchForm.startPlace.trim().length >= 2)" class="location-tip-panel result-location-tip-panel">
+              <small v-if="serviceStartTipLoading">正在查询地点...</small>
+              <button v-for="tip in serviceStartTips" :key="`service-start-${tip.name}-${tip.location}`" type="button" @click="selectServiceLocation('start', tip)">
+                <strong>{{ tip.name }}</strong>
+                <em>{{ locationTipText(tip) }}</em>
+              </button>
+              <small v-if="!serviceStartTipLoading && !serviceStartTips.length">请继续输入更精确的出发地</small>
+            </div>
+          </label>
+          <label>
+            <span>{{ currentResultTabId === 'selfDrive' ? '还车/目的地' : '终点地' }}</span>
+            <input
+              v-model="searchForm.destination"
+              :placeholder="resultTabConfig.destinationPlaceholder"
+              autocomplete="off"
+              @input="loadServiceLocationTips('end')"
+              @focus="showServiceEndTips = true"
+            />
+            <div v-if="showServiceEndTips && (serviceEndTips.length || serviceEndTipLoading || searchForm.destination.trim().length >= 2)" class="location-tip-panel result-location-tip-panel">
+              <small v-if="serviceEndTipLoading">正在查询地点...</small>
+              <button v-for="tip in serviceEndTips" :key="`service-end-${tip.name}-${tip.location}`" type="button" @click="selectServiceLocation('end', tip)">
+                <strong>{{ tip.name }}</strong>
+                <em>{{ locationTipText(tip) }}</em>
+              </button>
+              <small v-if="!serviceEndTipLoading && !serviceEndTips.length">请继续输入更精确的终点地</small>
+            </div>
+          </label>
+          <label>
+            <span>出发日期</span>
+            <input v-model="searchForm.date" type="date" />
+          </label>
+          <label>
+            <span>出发时间</span>
+            <input v-model="privateCarForm.startTime" type="time" />
+          </label>
+          <label>
+            <span>{{ currentResultTabId === 'selfDrive' ? '车型偏好' : '席别偏好' }}</span>
+            <input v-model="searchForm.extra" :placeholder="resultTabConfig.extraPlaceholder" />
+          </label>
+        </template>
         <button type="submit">{{ loading ? '搜索中...' : '搜索' }}</button>
       </form>
     </section>
@@ -2425,6 +2657,11 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
           </div>
         </article>
       </div>
+      <div v-if="!loading && resultType === 'hotel' && !hotelResults.length" class="result-empty-state">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <strong>没有搜索到住宿结果</strong>
+        <p>模拟数据库中没有匹配当前目的地、日期或预算的酒店。</p>
+      </div>
 
       <div v-if="resultType === 'traffic'" class="traffic-list">
         <article v-for="item in trafficResults" :key="item.id" class="traffic-row">
@@ -2434,6 +2671,11 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
           <div class="traffic-meta"><b>¥{{ item.price }}</b><span>{{ item.seatType }} · 余 {{ item.remainCount }}</span></div>
           <button type="button" @click="openTrafficOrder(item)">预订</button>
         </article>
+      </div>
+      <div v-if="!loading && resultType === 'traffic' && !trafficResults.length" class="result-empty-state">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <strong>没有搜索到出行产品</strong>
+        <p>模拟数据库中没有匹配当前起始地、终点地、日期或出行方式的记录。</p>
       </div>
 
       <div v-if="pageMode === 'orders' && orders.length" class="order-panel">
@@ -2487,11 +2729,11 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
       <img class="assistant-fab-icon" :src="xiaoqiAvatar" alt="小七" />
     </button>
 
-    <section v-if="showAssistant" class="assistant-panel" aria-label="小七 AI 助手">
+    <section v-if="showAssistant" class="assistant-panel" aria-label="小七智能助手">
       <header class="assistant-header">
         <div class="assistant-title">
           <img class="assistant-avatar" :src="xiaoqiAvatar" alt="小七" />
-          <div><strong>小七 AI 助手</strong><span>智能出行助手 · 在线</span></div>
+          <div><strong>小七智能助手</strong><span>智能出行助手 · 在线</span></div>
         </div>
         <div class="assistant-actions">
           <button type="button" class="assistant-enter" @click="enterApp">进入智能体系统</button>
@@ -2637,7 +2879,7 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
 .field-control {
   height: 72px;
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
   padding: 0 18px 0 20px;
@@ -2708,6 +2950,12 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
 }
 .clear-btn {
   font-size: 16px;
+}
+.demand-control .clear-btn {
+  grid-column: 3;
+}
+.demand-control .hero-plan-btn {
+  grid-column: 4;
 }
 .hero-plan-btn {
   width: 100%;
@@ -2834,6 +3082,7 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
 .recommend-traffic i { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 14px; background: #eaf4ff; color: #2563eb; }
 .recommend-empty { padding: 18px; border-radius: 16px; background: #f8fafc; color: #64748b; text-align: center; font-weight: 760; }
 .home-trip-workspace { width: min(1560px, calc(100% - 56px)); margin: 18px auto 34px; display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(340px, .8fr); gap: 18px; align-items: stretch; }
+.home-trip-workspace > .agent-plan-workspace { grid-column: 1 / -1; }
 .trip-panel { border: 1px solid rgba(191, 219, 254, .82); border-radius: 18px; background: #fff; box-shadow: 0 16px 38px rgba(15, 35, 75, .08); }
 .my-trip-panel { padding: 22px; }
 .travel-assistant-panel { padding: 22px; }
@@ -3006,20 +3255,29 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
 .stage-fade-enter-active, .stage-fade-leave-active { transition: opacity .24s ease, transform .24s ease; }
 .stage-fade-enter-from, .stage-fade-leave-to { opacity: 0; transform: translateY(12px); }
 @keyframes chainShimmer { to { background-position: -220% 0; } }
-.service-result-hero { position: relative; width: 100%; min-height: 300px; margin: 0; display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; padding: 112px max(48px, calc((100vw - 1180px) / 2)) 48px; border-radius: 0 0 30px 30px; background-size: cover; background-position: center 52%; background-repeat: no-repeat; color: #fff; box-shadow: 0 20px 48px rgba(15, 23, 42, .18); }
+.service-result-hero { position: relative; width: 100%; min-height: 360px; margin: 0; display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; padding: 106px max(48px, calc((100vw - 1180px) / 2)) 62px; border-radius: 0 0 30px 30px; background-size: cover; background-position: center 48%; background-repeat: no-repeat; color: #fff; box-shadow: 0 20px 48px rgba(15, 23, 42, .18); }
 .service-result-hero h1 { margin: 12px 0 8px; font-size: 34px; letter-spacing: -.04em; }
 .service-result-hero p { margin: 0; color: rgba(255, 255, 255, .88); text-shadow: 0 3px 14px rgba(15, 23, 42, .34); }
 .back-home-btn, .refresh-result-btn { border: 0; border-radius: 999px; font: inherit; font-weight: 850; cursor: pointer; }
 .back-home-btn { height: 34px; padding: 0 12px; color: #1d4ed8; background: rgba(255, 255, 255, .92); }
 .refresh-result-btn { height: 42px; padding: 0 18px; color: #1d4ed8; background: #fff; }
-.result-inline-search { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); width: min(900px, calc(100% - 80px)); padding: 14px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 10px; border-radius: 18px; background: rgba(255, 255, 255, .94); box-shadow: 0 20px 46px rgba(15, 23, 42, .22); }
-.result-inline-search label { position: relative; min-width: 0; height: 58px; padding: 8px 12px; display: flex; flex-direction: column; justify-content: center; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; }
+.result-inline-search { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); width: min(1180px, calc(100% - 72px)); padding: 16px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) 116px; gap: 10px; align-items: stretch; border-radius: 18px; background: rgba(255, 255, 255, .96); box-shadow: 0 20px 46px rgba(15, 23, 42, .22); backdrop-filter: blur(12px); }
+.result-inline-search.hotel-result-search { grid-template-columns: minmax(220px, 1.35fr) repeat(5, minmax(0, 1fr)) 116px; }
+.result-inline-search label { position: relative; min-width: 0; min-height: 62px; padding: 9px 12px; display: flex; flex-direction: column; justify-content: center; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.9); }
+.result-inline-search label:focus-within { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+.result-inline-search .wide-field { min-width: 0; }
 .result-inline-search span { color: #64748b; font-size: 12px; font-weight: 800; }
 .result-inline-search input { min-width: 0; border: 0; outline: 0; color: #0f172a; font: inherit; font-weight: 800; background: transparent; }
-.result-inline-search button { width: 92px; border: 0; border-radius: 14px; color: #fff; background: #2563eb; font: inherit; font-weight: 900; cursor: pointer; }
+.result-inline-search input[readonly] { cursor: default; color: #334155; }
+.result-inline-search > button { width: 116px; border: 0; border-radius: 14px; color: #fff; background: #2563eb; font: inherit; font-weight: 900; cursor: pointer; box-shadow: 0 12px 24px rgba(37, 99, 235, .22); }
+.result-inline-search > button:hover { background: #1d4ed8; }
 .result-location-tip-panel { top: calc(100% + 8px); width: 100%; max-height: 260px; overflow: auto; }
 .result-inline-search .result-location-tip-panel button { width: 100%; display: grid; gap: 4px; padding: 10px 11px; border-radius: 12px; color: inherit; background: transparent; text-align: left; font-weight: 700; }
 .result-inline-search .result-location-tip-panel button:hover { background: #eff6ff; }
+.result-empty-state { min-height: 220px; display: grid; place-items: center; align-content: center; gap: 10px; padding: 34px; border: 1px dashed #bfdbfe; border-radius: 18px; background: #f8fbff; color: #35506f; text-align: center; }
+.result-empty-state i { width: 46px; height: 46px; display: grid; place-items: center; border-radius: 50%; color: #2563eb; background: #eaf4ff; font-size: 20px; }
+.result-empty-state strong { color: #0f172a; font-size: 20px; }
+.result-empty-state p { margin: 0; color: #64748b; }
 .service-search-panel { width: min(1180px, calc(100% - 48px)); margin: -14px auto 0; position: relative; z-index: 2; border-radius: 22px; background: #fff; border: 1px solid #e2e8f0; box-shadow: 0 18px 46px rgba(15, 23, 42, .1); overflow: hidden; }
 .service-tabs { display: flex; align-items: center; justify-content: center; gap: 26px; padding: 14px 22px 0; border-bottom: 1px solid #e2e8f0; overflow-x: auto; }
 .service-tabs button { position: relative; min-width: 72px; height: 74px; border: 0; background: transparent; color: #0f172a; font: inherit; font-weight: 850; cursor: pointer; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
@@ -3193,12 +3451,14 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
 @keyframes dotPulse { 0%, 80%, 100% { transform: translateY(0); opacity: .45; } 40% { transform: translateY(-3px); opacity: 1; } }
 @media (max-width: 1120px) { .hero-chain-search { width: min(100% - 42px, 1180px); padding: 20px; } .hero-chain-form { grid-template-columns: 1fr; } .demand-field { grid-column: auto; } .hero-plan-btn, .field-control { height: 56px; } .field-control input { height: 52px; } .field-label { font-size: 16px; } .home-trip-workspace, .landing-map-layout, .landing-map-visual-grid, .landing-map-detail-grid { grid-template-columns: 1fr; } .itinerary-module-grid { grid-template-columns: 1fr; } .route-option-grid, .hotel-match-strip, .service-timeline-grid { grid-template-columns: 1fr; } .landing-map-page { width: min(100% - 42px, 1180px); } .chain-stage-grid, .route-options, .hotel-match-grid, .chain-order-panel { grid-template-columns: 1fr; } .chain-stage-card.stage-order { grid-column: auto; } .intent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .search-form, .rental-form, .private-form, .hotel-form { grid-template-columns: 1fr 1fr; } .search-btn { grid-column: 1 / -1; } .hotel-card, .traffic-row { grid-template-columns: 1fr; } .hotel-card img { width: 100%; height: 180px; } .price-box { justify-items: start; } .hotel-detail-hero, .hotel-detail-content { grid-template-columns: 1fr; } .hotel-info-panel { position: static; } }
 @media (max-width: 1120px) { .search-form, .rental-form, .private-form, .hotel-form { grid-template-columns: 1fr 1fr; } .search-btn { grid-column: 1 / -1; } .hotel-card, .traffic-row { grid-template-columns: 1fr; } .hotel-card img { width: 100%; height: 180px; } .price-box { justify-items: start; } .hotel-detail-hero, .hotel-detail-content { grid-template-columns: 1fr; } .hotel-info-panel { position: static; } .assistant-panel { width: min(520px, calc(100vw - 32px)); min-width: 0; } .assistant-header { grid-template-columns: 1fr auto; } }
-@media (max-width: 820px) { .home-hero { min-height: 650px; } .home-nav, .hero-chain-search, .hero-search-card, .booking-section, .chain-progress-section, .home-trip-workspace, .landing-map-page { width: min(100% - 28px, 1180px); } .landing-map-header { display: grid; padding: 20px; } .landing-map-card { min-height: 460px; } .landing-map-container { height: 460px; } .hero-chain-search { padding: 18px 16px; border-radius: 20px; } .field-control { grid-template-columns: 32px minmax(0, 1fr) auto auto; gap: 8px; padding: 0 12px; } .demand-field .field-control { grid-template-columns: 32px minmax(0, 1fr) auto; } .field-main-icon { width: 30px; height: 30px; font-size: 15px; } .field-control input { font-size: 15px; } .itinerary-card-grid { grid-template-columns: 1fr; } .trip-panel-head { display: grid; } .intent-grid { grid-template-columns: 1fr; } .clarify-card > div { grid-template-columns: 1fr; } .chain-order-actions { justify-content: stretch; } .chain-order-actions button { flex: 1 1 140px; } .travel-tabs { justify-content: flex-start; gap: 18px; padding-inline: 18px; } .search-form { grid-template-columns: 1fr; } .hotel-detail-hero, .hotel-detail-content { width: min(100% - 28px, 1180px); } .hotel-detail-cover, .hotel-detail-summary { min-height: auto; } .hotel-detail-summary { padding: 22px; } .detail-room-row { grid-template-columns: 1fr; } .room-price { text-align: left; } .assistant-fab { right: 16px; bottom: 16px; } .assistant-panel { right: 16px; bottom: 84px; width: calc(100vw - 32px); height: min(560px, calc(100vh - 160px)); } }
+@media (max-width: 1120px) { .service-result-hero { min-height: auto; display: block; padding: 92px 0 28px; } .result-inline-search, .result-inline-search.hotel-result-search { position: static; width: min(900px, calc(100% - 36px)); margin: 96px auto 0; transform: none; grid-template-columns: repeat(2, minmax(0, 1fr)); } .result-inline-search > button { width: 100%; min-height: 54px; grid-column: 1 / -1; } }
+@media (max-width: 820px) { .home-hero { min-height: 650px; } .home-nav, .hero-chain-search, .hero-search-card, .booking-section, .chain-progress-section, .home-trip-workspace, .landing-map-page { width: min(100% - 28px, 1180px); } .landing-map-header { display: grid; padding: 20px; } .landing-map-card { min-height: 460px; } .landing-map-container { height: 460px; } .hero-chain-search { padding: 18px 16px; border-radius: 20px; } .field-control { grid-template-columns: 32px minmax(0, 1fr) auto; gap: 8px; padding: 0 12px; } .demand-field .field-control { grid-template-columns: 32px minmax(0, 1fr) auto; } .field-main-icon { width: 30px; height: 30px; font-size: 15px; } .field-control input { font-size: 15px; } .itinerary-card-grid { grid-template-columns: 1fr; } .trip-panel-head { display: grid; } .intent-grid { grid-template-columns: 1fr; } .clarify-card > div { grid-template-columns: 1fr; } .chain-order-actions { justify-content: stretch; } .chain-order-actions button { flex: 1 1 140px; } .travel-tabs { justify-content: flex-start; gap: 18px; padding-inline: 18px; } .search-form { grid-template-columns: 1fr; } .hotel-detail-hero, .hotel-detail-content { width: min(100% - 28px, 1180px); } .hotel-detail-cover, .hotel-detail-summary { min-height: auto; } .hotel-detail-summary { padding: 22px; } .detail-room-row { grid-template-columns: 1fr; } .room-price { text-align: left; } .assistant-fab { right: 16px; bottom: 16px; } .assistant-panel { right: 16px; bottom: 84px; width: calc(100vw - 32px); height: min(560px, calc(100vh - 160px)); } }
+@media (max-width: 820px) { .result-inline-search, .result-inline-search.hotel-result-search { margin-top: 72px; grid-template-columns: 1fr; } .result-inline-search label { min-height: 58px; } }
 @media (max-width: 1120px) {
   .hero-chain-search { width: min(94%, 1180px); padding: 28px; border-radius: 28px; }
   .hero-location-row { grid-template-columns: 1fr; gap: 18px; }
   .hero-chain-form { gap: 18px; }
-  .field-control { height: 68px; grid-template-columns: 42px minmax(0, 1fr) auto auto; }
+  .field-control { height: 68px; grid-template-columns: 42px minmax(0, 1fr) auto; }
   .demand-control { height: auto; min-height: 68px; grid-template-columns: 42px minmax(0, 1fr) auto 280px; }
   .field-control input { height: 64px; font-size: 18px; }
   .hero-plan-btn { min-width: 240px; height: 54px; }
@@ -3206,7 +3466,7 @@ async function openAfterSaleFromChain(type = 'ORDER_ERROR') {
 @media (max-width: 820px) {
   .hero-chain-search { width: min(100% - 28px, 1180px); padding: 20px; border-radius: 24px; }
   .field-label { font-size: 16px; }
-  .field-control { height: 62px; grid-template-columns: 34px minmax(0, 1fr) auto auto; gap: 8px; padding: 0 12px; border-radius: 16px; }
+  .field-control { height: 62px; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 8px; padding: 0 12px; border-radius: 16px; }
   .field-main-icon { width: 32px; height: 32px; font-size: 15px; }
   .field-control input { height: 58px; font-size: 16px; }
   .demand-control { height: auto; grid-template-columns: 34px minmax(0, 1fr) auto; padding: 0 12px 12px; }

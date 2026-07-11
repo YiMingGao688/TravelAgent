@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/location")
+@RequestMapping({"/api/location", "/api/map"})
 public class LocationController {
     private final HotelModuleService hotelModuleService;
 
@@ -25,12 +25,27 @@ public class LocationController {
      * 可选传入 city 限定搜索范围，避免全国乱搜。
      */
     @GetMapping("/tips")
-    public Result<List<LocationTipDTO>> tips(@RequestParam String keyword,
+    public Result<List<LocationTipDTO>> tips(@RequestParam(required = false) String keyword,
+                                             @RequestParam(required = false) String q,
+                                             @RequestParam(required = false) String input,
                                              @RequestParam(required = false) String city) {
         try {
-            return Result.success(hotelModuleService.locationTips(keyword, city == null ? "" : city));
+            String query = firstText(keyword, q, input);
+            if (query == null) {
+                return Result.success(List.of());
+            }
+            return Result.success(hotelModuleService.locationTips(query, city == null ? "" : city));
         } catch (AmapGeoService.AmapRateLimitException e) {
             return Result.error(429, e.getMessage());
         }
+    }
+
+    private String firstText(String... values) {
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()) {
+                return value.trim();
+            }
+        }
+        return null;
     }
 }

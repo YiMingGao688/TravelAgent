@@ -109,6 +109,43 @@ export function parseSSEEvent(data) {
     return { eventType, eventData }
 }
 
+export async function streamAgentTripPlan(payload, handlers = {}, signal) {
+    const response = await fetch('/api/agent/trip/plan/stream', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream'
+        },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+        signal
+    })
+    if (!response.ok || !response.body) {
+        throw new Error('智能体规划流启动失败')
+    }
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+    while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const chunks = buffer.split(/\n\n/)
+        buffer = chunks.pop() || ''
+        for (const chunk of chunks) {
+            const { eventType, eventData } = parseSSEEvent(chunk)
+            if (!eventType || !eventData) continue
+            let data = eventData
+            try {
+                data = JSON.parse(eventData)
+            } catch (error) {
+                // 非 JSON 事件保持原文本，便于兼容后端错误消息。
+            }
+            handlers.onEvent?.(eventType, data)
+        }
+    }
+}
+
 export async function saveTripPlan(plan) {
     return request('/api/trip/save', {
         method: 'POST',
@@ -214,11 +251,17 @@ export async function deleteServiceReport(id) {
 }
 
 export async function searchHotels(params = {}) {
+    const normalizedParams = { ...params }
+    if (!normalizedParams.city && normalizedParams.cityName) normalizedParams.city = normalizedParams.cityName
+    if (!normalizedParams.keyword && normalizedParams.destinationKeyword) normalizedParams.keyword = normalizedParams.destinationKeyword
+    delete normalizedParams.cityName
+    delete normalizedParams.destinationKeyword
+
     const query = new URLSearchParams()
-    Object.entries(params).forEach(([key, value]) => {
+    Object.entries(normalizedParams).forEach(([key, value]) => {
         if (value !== undefined && value !== null && value !== '') query.set(key, value)
     })
-    const result = await request(`/api/hotels/search?${query.toString()}`)
+    const result = await request(`/api/booking-hotels/search?${query.toString()}`)
     return result.data || []
 }
 
@@ -314,7 +357,7 @@ export function createDebouncedLocationTips() {
 }
 
 export async function getHotelDetail(id) {
-    const result = await request(`/api/hotels/${id}`)
+    const result = await request(`/api/booking-hotels/${id}`)
     return result.data
 }
 
@@ -376,6 +419,87 @@ export async function planTravelChain(payload) {
     const result = await request('/api/travel-chain/plan', {
         method: 'POST',
         body: JSON.stringify(payload)
+    })
+    return result.data
+}
+
+export async function startAgentPlan(payload) {
+    const result = await request('/api/agent/plan/start', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    })
+    return result.data
+}
+
+export async function getAgentTripRun(runId) {
+    const result = await request(`/api/agent/trip/run/${encodeURIComponent(runId)}`)
+    return result.data
+}
+
+export async function getAgentTripEvents(runId) {
+    const result = await request(`/api/agent/trip/run/${encodeURIComponent(runId)}/events`)
+    return result.data || []
+}
+
+export async function getAgentTripCards(runId) {
+    const result = await request(`/api/agent/trip/run/${encodeURIComponent(runId)}/cards`)
+    return result.data || []
+}
+
+export async function getAgentTripFinalItinerary(runId) {
+    const result = await request(`/api/agent/trip/run/${encodeURIComponent(runId)}/final-itinerary`)
+    return result.data || []
+}
+
+export async function confirmTripPlanCard(cardId) {
+    const result = await request(`/api/agent/trip/card/${encodeURIComponent(cardId)}/confirm`, {
+        method: 'POST',
+        body: JSON.stringify({})
+    })
+    return result.data
+}
+
+export async function getAgentPlan(sessionId) {
+    const result = await request(`/api/agent/plan/${encodeURIComponent(sessionId)}`)
+    return result.data
+}
+
+export async function supplementAgentPlan(sessionId, payload = {}) {
+    const result = await request(`/api/agent/plan/${encodeURIComponent(sessionId)}/supplement`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    })
+    return result.data
+}
+
+export async function confirmAgentCandidate(sessionId, candidateId, payload = {}) {
+    const result = await request(`/api/agent/plan/${encodeURIComponent(sessionId)}/candidates/${encodeURIComponent(candidateId)}/confirm`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    })
+    return result.data
+}
+
+export async function rejectAgentCandidate(sessionId, candidateId, payload = {}) {
+    const result = await request(`/api/agent/plan/${encodeURIComponent(sessionId)}/candidates/${encodeURIComponent(candidateId)}/reject`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    })
+    return result.data
+}
+
+export async function changeAgentCandidate(sessionId, candidateId, payload = {}) {
+    const result = await request(`/api/agent/plan/${encodeURIComponent(sessionId)}/candidates/${encodeURIComponent(candidateId)}/change`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    })
+    return result.data
+}
+
+export async function finalizeAgentPlan(sessionId) {
+    const result = await request(`/api/agent/plan/${encodeURIComponent(sessionId)}/finalize`, {
+        method: 'POST',
+        body: JSON.stringify({})
     })
     return result.data
 }

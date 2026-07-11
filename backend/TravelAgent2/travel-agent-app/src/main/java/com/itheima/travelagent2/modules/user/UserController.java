@@ -25,7 +25,7 @@ public class UserController {
     public Map<String, Object> login(@RequestBody User user, HttpSession session) {
         Map<String, Object> map = new HashMap<>();
         try {
-            User loginUser = userService.login(user.getEmail(), user.getPassword());
+            User loginUser = userService.login(user.getPhone(), user.getPassword());
             if (loginUser != null) {
                 session.setAttribute("loginUser", loginUser);
                 map.put("code", 200);
@@ -45,10 +45,10 @@ public class UserController {
     public Map<String, Object> register(@RequestBody User user) {
         Map<String, Object> map = new HashMap<>();
         try {
-            User exist = userService.findByEmail(user.getEmail());
+            User exist = userService.findByPhone(user.getPhone());
             if (exist != null) {
                 map.put("code", 500);
-                map.put("msg", "email already registered");
+                map.put("msg", "phone already registered");
                 return map;
             }
             userService.register(user);

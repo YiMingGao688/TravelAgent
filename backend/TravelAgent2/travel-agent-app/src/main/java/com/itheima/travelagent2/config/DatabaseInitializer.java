@@ -5,6 +5,8 @@ import org.springframework.stereotype.Component;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.Locale;
 
@@ -26,6 +28,8 @@ public class DatabaseInitializer {
         createHotelOrderTable();
         createTimelineTable();
         createAfterSaleOrderTable();
+        createAgentPlanTables();
+        createAgentTripRunTables();
         createPlanningFoundationTables();
         seedPlanningFoundationData();
         seedBookingDemoData();
@@ -35,11 +39,15 @@ public class DatabaseInitializer {
         String sql = """
                 CREATE TABLE IF NOT EXISTS user (
                     id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-                    email VARCHAR(120) NOT NULL,
+                    username VARCHAR(80) DEFAULT NULL,
+                    phone VARCHAR(40) NOT NULL,
                     password VARCHAR(120) NOT NULL,
+                    nickname VARCHAR(80) DEFAULT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'ENABLED',
+                    last_login_time DATETIME DEFAULT NULL,
                     create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
                     update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    UNIQUE KEY uk_user_email (email)
+                    UNIQUE KEY uk_user_phone (phone)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 """;
 
@@ -49,17 +57,36 @@ public class DatabaseInitializer {
             addUserColumnIfMissing(statement, "username", "VARCHAR(80) DEFAULT NULL");
             addUserColumnIfMissing(statement, "nickname", "VARCHAR(80) DEFAULT NULL");
             addUserColumnIfMissing(statement, "phone", "VARCHAR(40) DEFAULT NULL");
-            addUserColumnIfMissing(statement, "role", "VARCHAR(32) NOT NULL DEFAULT 'USER'");
             addUserColumnIfMissing(statement, "status", "VARCHAR(32) NOT NULL DEFAULT 'ENABLED'");
             addUserColumnIfMissing(statement, "last_login_time", "DATETIME DEFAULT NULL");
-            // 管理端账号也统一落在 user 表。首次登录时如果发现旧明文密码，
-            // AdminController 会自动迁移为 BCrypt 密文，避免旧库登录失败。
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS user_permission (
+                        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        user_id INT NOT NULL,
+                        permission_code VARCHAR(64) NOT NULL,
+                        permission_name VARCHAR(80) DEFAULT NULL,
+                        status VARCHAR(32) NOT NULL DEFAULT 'ENABLED',
+                        create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY uk_user_permission (user_id, permission_code),
+                        INDEX idx_user_permission_user (user_id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                    """);
             statement.executeUpdate("""
                     INSERT IGNORE INTO user
-                    (id, username, email, password, nickname, role, status)
+                    (id, username, phone, password, nickname, status)
                     VALUES
-                    (1, 'admin', 'admin@qvtrip.local', '$2a$10$5VXMbnPe0gXn5MuPooqT0u.lsXMsloNsgjf6HVl8VWrzxUuSicjFq', '超级管理员', 'SUPER_ADMIN', 'ENABLED')
+                    (1, 'admin', '13800000000', '$2a$10$5VXMbnPe0gXn5MuPooqT0u.lsXMsloNsgjf6HVl8VWrzxUuSicjFq', '超级管理员', 'ENABLED')
                     """);
+            migrateUserRoleToPermission(connection, statement);
+            statement.executeUpdate("""
+                    INSERT IGNORE INTO user_permission
+                    (user_id, permission_code, permission_name, status)
+                    VALUES
+                    (1, 'SUPER_ADMIN', '超级管理员', 'ENABLED')
+                    """);
+            dropUserColumnIfExists(connection, statement, "email");
+            dropUserColumnIfExists(connection, statement, "role");
         } catch (Exception e) {
             throw new IllegalStateException("初始化 user 表失败", e);
         }
@@ -70,6 +97,241 @@ public class DatabaseInitializer {
             statement.execute("ALTER TABLE user ADD COLUMN " + column + " " + definition);
         } catch (Exception ignored) {
             // 字段已存在时忽略，保证旧库可平滑升级。
+        }
+    }
+
+    private void migrateUserRoleToPermission(Connection connection, Statement statement) throws Exception {
+        if (!userColumnExists(connection, "role")) {
+            return;
+        }
+        statement.executeUpdate("""
+                INSERT IGNORE INTO user_permission
+                (user_id, permission_code, permission_name, status)
+                SELECT id, UPPER(role), UPPER(role), 'ENABLED'
+                FROM user
+                WHERE role IS NOT NULL AND TRIM(role) <> ''
+                """);
+    }
+
+    private void dropUserColumnIfExists(Connection connection, Statement statement, String column) throws Exception {
+        if (!userColumnExists(connection, column)) {
+            return;
+        }
+        statement.execute("ALTER TABLE user DROP COLUMN " + column);
+    }
+
+    private boolean userColumnExists(Connection connection, String column) throws Exception {
+        DatabaseMetaData metaData = connection.getMetaData();
+        try (ResultSet columns = metaData.getColumns(connection.getCatalog(), null, "user", column)) {
+            if (columns.next()) {
+                return true;
+            }
+        }
+        try (ResultSet columns = metaData.getColumns(connection.getCatalog(), null, "USER", column)) {
+            return columns.next();
+        }
+    }
+
+    private void createAgentPlanTables() {
+        String planSessionSql = """
+                CREATE TABLE IF NOT EXISTS plan_session (
+                    id BIGINT NOT NULL PRIMARY KEY,
+                    user_id VARCHAR(80) NOT NULL,
+                    session_title VARCHAR(200) DEFAULT NULL,
+                    start_place VARCHAR(160) DEFAULT NULL,
+                    end_place VARCHAR(160) DEFAULT NULL,
+                    depart_time DATETIME DEFAULT NULL,
+                    return_time DATETIME DEFAULT NULL,
+                    scene_type VARCHAR(60) DEFAULT NULL,
+                    preference VARCHAR(500) DEFAULT NULL,
+                    budget DECIMAL(10,2) DEFAULT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'RUNNING',
+                    current_step VARCHAR(80) DEFAULT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_plan_session_user (user_id),
+                    INDEX idx_plan_session_status (status)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """;
+        String stepSql = """
+                CREATE TABLE IF NOT EXISTS agent_step_record (
+                    id BIGINT NOT NULL PRIMARY KEY,
+                    session_id BIGINT NOT NULL,
+                    agent_name VARCHAR(80) NOT NULL,
+                    step_key VARCHAR(80) NOT NULL,
+                    step_title VARCHAR(160) DEFAULT NULL,
+                    step_content TEXT DEFAULT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+                    input_json JSON DEFAULT NULL,
+                    output_json JSON DEFAULT NULL,
+                    started_at DATETIME DEFAULT NULL,
+                    finished_at DATETIME DEFAULT NULL,
+                    INDEX idx_agent_step_session (session_id),
+                    INDEX idx_agent_step_key (session_id, step_key)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """;
+        String candidateSql = """
+                CREATE TABLE IF NOT EXISTS trip_candidate (
+                    id BIGINT NOT NULL PRIMARY KEY,
+                    session_id BIGINT NOT NULL,
+                    candidate_type VARCHAR(32) NOT NULL,
+                    title VARCHAR(200) NOT NULL,
+                    provider VARCHAR(120) DEFAULT NULL,
+                    start_place VARCHAR(160) DEFAULT NULL,
+                    end_place VARCHAR(160) DEFAULT NULL,
+                    start_time DATETIME DEFAULT NULL,
+                    end_time DATETIME DEFAULT NULL,
+                    price DECIMAL(10,2) DEFAULT NULL,
+                    score DECIMAL(5,2) DEFAULT NULL,
+                    reason VARCHAR(1000) DEFAULT NULL,
+                    detail_json JSON DEFAULT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_candidate_session (session_id),
+                    INDEX idx_candidate_type_status (session_id, candidate_type, status)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """;
+        String itemSql = """
+                CREATE TABLE IF NOT EXISTS trip_item (
+                    id BIGINT NOT NULL PRIMARY KEY,
+                    session_id BIGINT NOT NULL,
+                    plan_id BIGINT DEFAULT NULL,
+                    source_candidate_id BIGINT DEFAULT NULL,
+                    item_type VARCHAR(32) NOT NULL,
+                    title VARCHAR(200) NOT NULL,
+                    start_place VARCHAR(160) DEFAULT NULL,
+                    end_place VARCHAR(160) DEFAULT NULL,
+                    start_time DATETIME DEFAULT NULL,
+                    end_time DATETIME DEFAULT NULL,
+                    price DECIMAL(10,2) DEFAULT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'CONFIRMED',
+                    detail_json JSON DEFAULT NULL,
+                    sort_order INT DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_trip_item_session (session_id),
+                    INDEX idx_trip_item_order (session_id, sort_order)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """;
+        String actionSql = """
+                CREATE TABLE IF NOT EXISTS user_confirm_action (
+                    id BIGINT NOT NULL PRIMARY KEY,
+                    session_id BIGINT NOT NULL,
+                    candidate_id BIGINT DEFAULT NULL,
+                    action_type VARCHAR(32) NOT NULL,
+                    action_result VARCHAR(32) DEFAULT NULL,
+                    remark VARCHAR(500) DEFAULT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_confirm_action_session (session_id),
+                    INDEX idx_confirm_action_candidate (candidate_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """;
+        String summarySql = """
+                CREATE TABLE IF NOT EXISTS trip_plan_summary (
+                    id BIGINT NOT NULL PRIMARY KEY,
+                    session_id BIGINT NOT NULL,
+                    user_id VARCHAR(80) NOT NULL,
+                    title VARCHAR(200) DEFAULT NULL,
+                    summary_text TEXT DEFAULT NULL,
+                    total_price DECIMAL(10,2) DEFAULT NULL,
+                    total_duration VARCHAR(80) DEFAULT NULL,
+                    risk_level VARCHAR(32) DEFAULT NULL,
+                    reminder_json JSON DEFAULT NULL,
+                    report_json JSON DEFAULT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'DRAFT',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uk_summary_session (session_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """;
+        try (Connection connection = dataSource.getConnection();
+             Statement statement = connection.createStatement()) {
+            statement.execute(planSessionSql);
+            statement.execute(stepSql);
+            statement.execute(candidateSql);
+            statement.execute(itemSql);
+            statement.execute(actionSql);
+            statement.execute(summarySql);
+        } catch (Exception e) {
+            throw new IllegalStateException("Initialize agent plan tables failed", e);
+        }
+    }
+
+    private void createAgentTripRunTables() {
+        String runSql = """
+                CREATE TABLE IF NOT EXISTS agent_run (
+                    id BIGINT NOT NULL PRIMARY KEY,
+                    user_id VARCHAR(80) DEFAULT NULL,
+                    request_id VARCHAR(120) DEFAULT NULL,
+                    start_place VARCHAR(160) DEFAULT NULL,
+                    end_place VARCHAR(160) DEFAULT NULL,
+                    requirement_text TEXT DEFAULT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'RUNNING',
+                    current_stage VARCHAR(80) DEFAULT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_agent_run_user (user_id),
+                    INDEX idx_agent_run_request (request_id),
+                    INDEX idx_agent_run_status (status)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """;
+        String eventSql = """
+                CREATE TABLE IF NOT EXISTS agent_event (
+                    id BIGINT NOT NULL PRIMARY KEY,
+                    run_id BIGINT NOT NULL,
+                    stage VARCHAR(80) NOT NULL,
+                    title VARCHAR(160) NOT NULL,
+                    summary TEXT DEFAULT NULL,
+                    detail_json JSON DEFAULT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'RUNNING',
+                    sequence_no INT NOT NULL DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_agent_event_run (run_id, sequence_no),
+                    INDEX idx_agent_event_stage (run_id, stage)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """;
+        String cardSql = """
+                CREATE TABLE IF NOT EXISTS trip_plan_card (
+                    id BIGINT NOT NULL PRIMARY KEY,
+                    run_id BIGINT NOT NULL,
+                    card_type VARCHAR(40) NOT NULL,
+                    title VARCHAR(200) NOT NULL,
+                    subtitle VARCHAR(200) DEFAULT NULL,
+                    content TEXT DEFAULT NULL,
+                    detail_json JSON DEFAULT NULL,
+                    confirm_required TINYINT(1) NOT NULL DEFAULT 1,
+                    confirmed TINYINT(1) NOT NULL DEFAULT 0,
+                    status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+                    sequence_no INT NOT NULL DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_trip_plan_card_run (run_id, sequence_no),
+                    INDEX idx_trip_plan_card_status (run_id, status)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """;
+        String itemSql = """
+                CREATE TABLE IF NOT EXISTS final_itinerary_item (
+                    id BIGINT NOT NULL PRIMARY KEY,
+                    run_id BIGINT NOT NULL,
+                    card_id BIGINT NOT NULL,
+                    title VARCHAR(200) NOT NULL,
+                    content TEXT DEFAULT NULL,
+                    start_time DATETIME DEFAULT NULL,
+                    end_time DATETIME DEFAULT NULL,
+                    location VARCHAR(200) DEFAULT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'CONFIRMED',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_final_itinerary_run (run_id, created_at),
+                    UNIQUE KEY uk_final_itinerary_card (card_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """;
+        try (Connection connection = dataSource.getConnection();
+             Statement statement = connection.createStatement()) {
+            statement.execute(runSql);
+            statement.execute(eventSql);
+            statement.execute(cardSql);
+            statement.execute(itemSql);
+        } catch (Exception e) {
+            throw new IllegalStateException("Initialize agent trip run tables failed", e);
         }
     }
 

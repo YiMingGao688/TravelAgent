@@ -11,6 +11,16 @@ export {
   listUserOrders,
   payBookingOrder,
   planTravelChain,
+  streamAgentTripPlan,
+  getAgentTripRun,
+  confirmTripPlanCard,
+  startAgentPlan,
+  getAgentPlan,
+  supplementAgentPlan,
+  confirmAgentCandidate,
+  rejectAgentCandidate,
+  changeAgentCandidate,
+  finalizeAgentPlan,
   searchHotels,
   searchTraffic
 } from '../utils/api.js'

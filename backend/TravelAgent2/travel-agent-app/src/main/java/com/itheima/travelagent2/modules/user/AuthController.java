@@ -64,7 +64,6 @@ public class AuthController {
         user.setPhone(account);
         user.setUsername(account);
         user.setNickname(account);
-        user.setEmail(account + "@phone.local");
         user.setPassword(request.getPassword());
         userService.register(user);
         return login(request, session);
@@ -91,17 +90,15 @@ public class AuthController {
         if (account == null || account.isBlank()) {
             account = request.getAccount();
         }
-        if (account == null || account.isBlank()) {
-            account = request.getEmail();
-        }
         return account == null ? null : account.trim();
     }
 
     private AuthUserDTO toAuthUser(User user, HttpSession session) {
         String id = user == null || user.getId() == null ? "" : String.valueOf(user.getId());
-        String email = user == null ? "" : user.getEmail();
-        String name = user == null ? "" : (user.getNickname() == null || user.getNickname().isBlank() ? email : user.getNickname());
+        String phone = user == null ? "" : user.getPhone();
+        String name = user == null ? "" : (user.getNickname() == null || user.getNickname().isBlank() ? phone : user.getNickname());
+        String permission = user == null ? "" : user.getPermission();
         String token = "session-" + session.getId() + "-" + UUID.randomUUID();
-        return new AuthUserDTO(id, email, name, token);
+        return new AuthUserDTO(id, phone, name, permission, token);
     }
 }

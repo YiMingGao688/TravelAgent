@@ -15,8 +15,6 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 
-import java.util.List;
-
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
@@ -49,9 +47,11 @@ public class SecurityConfig {
             }
 
             return org.springframework.security.core.userdetails.User
-                    .withUsername(user.getEmail())
+                    .withUsername(user.getPhone())
                     .password(user.getPassword())
-                    .authorities(List.of())
+                    .authorities(user.getPermission() == null || user.getPermission().isBlank()
+                            ? new String[0]
+                            : new String[]{user.getPermission()})
                     .build();
         };
     }

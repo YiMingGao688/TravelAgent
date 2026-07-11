@@ -112,9 +112,7 @@ public class AmapGeoService {
             int total = tips.size();
             for (JsonNode tip : tips) {
                 String location = text(tip, "location");
-                if (!hasText(location) || "[]".equals(location)) {
-                    continue;
-                }
+                if ("[]".equals(location)) location = "";
                 LocationTipDTO dto = new LocationTipDTO();
                 dto.setName(text(tip, "name"));
                 dto.setDistrict(text(tip, "district"));
@@ -122,7 +120,9 @@ public class AmapGeoService {
                 dto.setLocation(location);
                 dto.setAddress(text(tip, "address"));
                 dto.setCityName(resolveCityName(dto.getDistrict(), dto.getName()));
-                result.add(dto);
+                if (hasText(dto.getName()) || hasText(dto.getDistrict())) {
+                    result.add(dto);
+                }
             }
 
             String firstNames = result.stream()

@@ -17,15 +17,15 @@ public class User {
     private Integer id;
 
     private String username;
-    private String email;
-
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
     private String nickname;
     private String phone;
-    private String role;
     private String status;
     private LocalDateTime lastLoginTime;
+
+    @TableField(exist = false)
+    private String permission;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;

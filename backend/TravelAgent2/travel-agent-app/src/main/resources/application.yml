@@ -13,6 +13,11 @@ spring:
     time-zone: Asia/Shanghai
 
   ai:
+    dashscope:
+      api-key: ${AI_DASHSCOPE_API_KEY:}
+      chat:
+        options:
+          model: qwen-plus
     zhipu:
       api-key: ${ZHIPU_API_KEY:}
       base-url: https://open.bigmodel.cn/api/paas/v4/chat/completions
@@ -23,7 +28,7 @@ spring:
 
 integration:
   amap-key: ${AMAP_KEY:}
-  weather-key: ${AMAP_WEATHER_KEY:${AMAP_KEY:}}
+  weather-key: ${WEATHER_KEY:${AMAP_KEY:}}
   payment-demo-key: ${PAYMENT_DEMO_KEY:placeholder}
 
 mybatis-plus:
